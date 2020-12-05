@@ -21,7 +21,7 @@
 
 <!-- /TOC -->
 # 1.事务属性有哪些，怎么实现的？
-![](./picture/ACID.png)
+![](../picture/Mysql/ACID.png)
 - 隔离性  
 通过锁实现见2  
 - 原子性和持久性  
@@ -213,12 +213,12 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
     - 顺序访问快。一是不需要多次寻址，二是避免额外排序
     - 覆盖查询很快
 # 14.Mysql架构？
-![Mysql架构](./picture/架构.png)
+![Mysql架构](../picture/Mysql/架构.png)
 - 连接器
     - 通信协议  
     半双工。客户端发送一个单独数据包给服务器（大小由max_allowed_packet控制）。服务器返回多个数据包
     - show full processlist  
-    ![status](./picture/status.png)
+    ![status](../picture/Mysql/status.png)
 - 优化器
     - 功能
         - count()、min()、max()  
@@ -251,7 +251,7 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
                     - 优点：无需随机IO
                     - 缺点：占用空间大，可能有更多排序块需要合并
             - 关联  
-            ![](./picture/关联orderby.png)
+            ![](../picture/Mysql/关联orderby.png)
         - 返回结果  
         增量逐步返回。例如，处理完最后一个关联表，开始生成第一条结果，就可以向客户端返回结果集。好处是服务端无须存储太多结果降低内存，同时客户端第一时间获得结果
     - 局限性  
@@ -301,8 +301,8 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
     - table  
         - **正在访问的表**
         - 当 FROM子句有子查询时，table列是\<derivedN>，N是子查询Id
-        ![](./picture/explain-1.png)  
-        ![](./picture/explain-2.png)
+        ![](../picture/Mysql/explain-1.png)  
+        ![](../picture/Mysql/explain-2.png)
     - **type**
         - ALL  
         全表扫描
@@ -347,7 +347,7 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
 # 17.MySQL配置优化？
 - 缓冲池和日志文件是必须配置的
     - InnoDB缓冲池
-    ![](./picture/InnoDB缓冲池.png)
+    ![](../picture/Mysql/InnoDB缓冲池.png)
 # 18.Mysql的几种log？
 - Redo Log  
 物理日志，记录页的物理修改操作
@@ -357,8 +357,8 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
         - redo log buffer
             - 缓冲大小  
             innodb_log_buffer_size
-            - 刷盘策略innodb_flush_log_at_trx_commit
-            ![](./picture/redo-log刷盘.png)
+            - 刷盘策略innodb_flush_log_at_trx_commit  
+            ![](../picture/Mysql/redo-log刷盘.png)
         - redo log file
     - 写入方式
     环形写入，后台线程刷新到数据文件
