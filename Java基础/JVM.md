@@ -1,12 +1,20 @@
 <!-- TOC -->
 
 - [1.内存区域](#1内存区域)
+    - [1.1线程私有](#11线程私有)
+    - [1.2共享](#12共享)
+        - [1.2.1 堆：存储对象实例和数组](#121-堆存储对象实例和数组)
+        - [1.2.1 方法区（逻辑区域）](#121-方法区逻辑区域)
+        - [1.2.1 运行时常量池Runtime Constant Pool](#121-运行时常量池runtime-constant-pool)
+        - [1.2.1 直接内存](#121-直接内存)
 - [2.虚拟机对象？](#2虚拟机对象)
 - [3.垃圾收集](#3垃圾收集)
     - [3.1确定对象是否死亡](#31确定对象是否死亡)
     - [3.2垃圾收集算法](#32垃圾收集算法)
     - [3.3算法实现](#33算法实现)
     - [3.4垃圾收集器](#34垃圾收集器)
+    - [3.5**G1**](#35g1)
+    - [3.6ZGC](#36zgc)
 - [4 性能监控与故障处理工具](#4-性能监控与故障处理工具)
 - [5类文件结构](#5类文件结构)
 - [6.字节码指令？](#6字节码指令)
@@ -21,43 +29,75 @@
 - [9编译与代码优化](#9编译与代码优化)
     - [9.1编译期优化](#91编译期优化)
     - [9.2运行期优化](#92运行期优化)
+- [10 创建了几个对象？](#10-创建了几个对象)
+- [11](#11)
 
 <!-- /TOC -->
 # 1.内存区域
-- 线程私有
-    - 程序计数器
-        - 当前线程所执行字节码的行号指示器
-        - 字节码解释器通过改变它选取下一条需要执行的指令，分支、循环、跳转、异常处理、线程恢复
-        - 线程切换后恢复到正确的执行位置
-    - 虚拟机栈（栈帧）
-        - -Xss
-        - 局部变量表
-            - 存放编译期可知的**基本数据类型**、**引用类型**
-            - 按Slot存储
-            - 所需内存空间在**编译器完成分配**，当进入一个方法时，所需空间完全确定，运行期不会改变局部变量表大小
-        - 操作数栈
-        - 动态链接
-        - 方法出口    
-- 共享
-    - 堆：存储对象实例和数组
-        - -XMS、-Xmx
-    - 方法区/元数据区  
-        - 方法区：类信息、常量、静态变量、即时编译器编译后的代
-        码
-            - jdk7
-                - 符号引用(Symbols Reference)->native
-                - 字面量(interned strings)->堆
-                - 静态变量(class statics)->堆
-        - 元数据区
-            - Klass MetaSpace  
-             Class 文件在 JVM 里的运行时数据结构
-            - NoKlass MetaSpace
-            Klass 相关的其他的内容，比如 Method，ConstantPool 等
-        - 为什么用元数据区替代方法区？
-        随着动态类加载的情况越来越多，且String.intern 是不受控的，所以方发区不好设置，常会出现 java.lang.OutOfMemoryError: PermGen space 异常。设置太小了容易出现内存溢出，设置大了会浪费    
-    **todo**
-    - 直接内存    
-    NIO使用
+## 1.1线程私有
+- 程序计数器
+    - 当前线程所执行字节码的行号指示器
+    - 字节码解释器通过改变它选取下一条需要执行的指令，分支、循环、跳转、异常处理、线程恢复
+    - 线程切换后恢复到正确的执行位置
+- 虚拟机栈（栈帧）
+    - -Xss
+    - 局部变量表
+        - 存放编译期可知的**基本数据类型**、**引用类型**
+        - 按Slot存储
+        - 所需内存空间在**编译器完成分配**，当进入一个方法时，所需空间完全确定，运行期不会改变局部变量表大小
+    - 操作数栈
+    - 动态链接
+    - 方法出口    
+## 1.2共享
+### 1.2.1 堆：存储对象实例和数组
+- -XMS、-Xmx
+### 1.2.1 方法区（逻辑区域）
+- 永久代：类信息、常量、静态变量、即时编译器编译后的代码，Full GC
+    - jdk7
+        - 符号引用(Symbols Reference)->native
+        - 字面量(interned strings)->堆
+        - 静态变量(class statics)->堆（class对象末尾）
+        - SymbolTable / StringTable，在native memory里，JDK7是把SymbolTable引用的Symbol移动到了native memory，而StringTable引用的java.lang.String实例则从PermGen移动到了普通Java heap
+- 为什么用元数据区替代方法区？
+    - 更容易遇到内存溢出的问题（永久代有-XX：MaxPermSize的上限，即使不设置也有默认大小，而J9和JRockit只要没有触碰到进程可用内存的上限
+    - 要把JRockit中的优秀功能移植到HotSpot虚拟机时，因为两者对方法区实现的差异而面临诸多困难
+    - interned-strings存储在永久代，会导致大量的性能问题和OOM错误    
+- 元数据区（使用本地内存）
+    - Klass MetaSpace：Class 文件在 JVM 里的运行时数据结构
+    - NoKlass MetaSpace：Klass 相关的其他的内容，runtime constant pool
+- 参数
+    - -XX:MetaspaceSize，初始空间大小，达到该值就会触发垃圾收集进行类型卸载，同时GC会对该值进行调整：如果释放了大量的空间，就适当降低该值；如果释放了很少的空间，那么在不超过MaxMetaspaceSize时，适当提高该值。
+    - -XX:MaxMetaspaceSize，最大空间，默认是没有限制。    
+　　        除了上面两个指定大小的选项以外，还有两个与 GC 相关的属性：
+    - -XX:MinMetaspaceFreeRatio，在GC之后，最小的Metaspace剩余空间容量的百分比
+    - -XX:MaxMetaspaceFreeRatio，在GC之后，最大的Metaspace剩余空间容量的百分比 
+- 其他
+[Metaspace引起的FullGC问题排查过程及解决方案](https://zhuanlan.zhihu.com/p/70418841) 
+### 1.2.1 运行时常量池Runtime Constant Pool
+（方法区的一部分），每个类一个，其中的引用类型常量（例如CONSTANT_String、CONSTANT_Class、CONSTANT_MethodHandle、CONSTANT_MethodType之类）都存的是引用。
+### 1.2.1 直接内存
+- 作用
+    - 减轻垃圾收集器的压力
+    - 减少将数据从堆内内存拷贝到堆外内存的步骤，提升程序I/O性能
+- 内存回收
+    - Cleaner extends PhantomReference\<Object\>
+    - DirectByteBuffer构造函数中会调用Cleaner.create(this,new Deallocator(base, size, cap))，使自己被虚引用引用，并注册一个回调函数Deallocator
+    - 回调函数中会释放内存
+    ```JAVA
+    private static class Deallocator implements Runnable  { 
+        //。。。省略 
+        public void run() { 
+            if (address ==0) { 
+            // Paranoia 
+                return; 
+            } 
+            unsafe.freeMemory(address); 
+            address =0; 
+            Bits.unreserveMemory(size,capacity); 
+        } 
+    }
+    ```
+- gc过程中如果发现某个对象只有PhantomReference引用，在gc完毕的时候会回调Cleaner.clean()，在clean方法中回调Deallocator的run方法
 # 2.虚拟机对象？
 - 创建
     - 加载  
@@ -172,86 +212,86 @@
             在进行FullGC时开启碎片整理
             - -XX:+CMSFullGCsBeforeCompaction  
             执行n次不压缩的Full GC后，执行一次压缩的
-- **G1**
-    - 设计目标和实现方式  
-        - 基于Region的堆内存布局
-            - 把连续的Java堆划分为多个大小相等的独立区域Region，大小从 1 MB 到 32 MB 不等，具体取决于堆大小。目标是产生不超过 2048 个区域
-            - 每个Region可以扮演Eden、Survivor、老年代
-            - Humongous Region存储大对象，超过Region一半大小的对象都被视为“巨型对象”，被分配到老年代中的“Humongous regions”。在Cleanup phase或Full GC时会清理死亡的巨型对象
-            - **每次收集的空间是Region大小的整数倍**
-            - 跟踪每个Region里面垃圾价值（回收所获得的空间大小及回收所需时间的经验值）大小，维护一个优先级列表，优先处理收益最大的，即 Garbage First
-        - 力求达到的暂停时间目标（软实时）  
-            - 在young GC期间，G1 GC 会调整其年轻代空间（eden 和survivor 大小）以满足软实时目标。
-            - 在mixed GC期间，G1 GC 会根据mixed GC的
-            -XX:G1MixedGCCountTarget、-XX:G1HeapWastePercent、-XX:InitiatingHeapOccupancyPercent 调整所回收的老年代 region数量
-        - 减少碎片，尽可能回收更多的堆空间，同时尽可能不超出暂停时间目标
-            - 将一组或多组Region（称为Collection Set (CSet)）中的存活对象以增量、并行的方式复制到新区域来实现压缩
-        - 每个Region都维护自己的记忆集RSet，记录别的Region指向自己的指针。独立的 RSet 可以并行、独立地回收Region，因为只需要对Region（而不是整个堆）的 RSet 进行扫描获取指向该Region的引用。G1 GC 使用写后屏障记录堆的更改并更新 RSet。
-    - 难点
-        - 跨Region引用对象  
-        每个Region都维护自己的记忆集RSet，记录别的Region指向自己的指针。本质是一个哈希表，Key是**别的Region的起始地址**，Value是一个集合，里面存储的元素是**卡表的索引号**
-        卡表实现更复杂，且由于Region数量比传统收集器的分代数量要多，因此更占内存，耗费大约10%~20%堆容量
-        - 并发标记阶段如何保证收集线程与用户线程互不干扰  
-            - SATB原始快照（CMS是增量更新）
-            - 把Region的一部分空间划分出来用于并发回收过程中新对象分配
-            - 如果内存回收速度赶不上内存分配速度，需要冻结用户线程，导致Full GC而长时间“Stop The World”
-        - 可靠的停顿预测模型
-            - 衰减均值
-            - 记录每个Region回收耗时，每个Region脏卡数量等
-            - 通过这些信息预测有哪些Region组成的回收机可以在不超期望停顿时间约束下获得最高收益
-    - 运行过程
-    ![](../picture/JVM/G1-1.png) 
-    ![](../picture/JVM/G1-2.png)
-    - GC模式
-        - Young GC：选定所有年轻代里的Region。通过控制年轻代的region个数，即年轻代内存大小，来控制young GC的时间开销
-        - Mixed GC：选定所有年轻代里的Region，外加根据global concurrent marking统计得出收集收益高的若干老年代Region。在用户指定的开销目标范围内尽可能选择收益高的老年代Region。
-        - 什么时候开启Mixed GC
-        **global concurrent marking结束后，开启Mixed GC**
-        - 什么时候开启并发周期？
-            - 每次Young GC结束的时候，当young gc结束，堆内存已经达到了 -XX:InitiatingHeapOccupancyPercent，开启global concurrent marking
-            - 在分配任何Humongous region（巨型区域）之前，会检查标记阈值，可能会启动一个并发周期
-        因为老年代空间中的使用内存发生变化只有一个情形：Young GC的时候。所以在这个时候判断是最合理的
-        - Full GC：如果mixed GC实在无法跟上程序分配内存的速度，导致老年代填满无法继续进行Mixed GC，就会使用serial old GC（full GC）来收集整个GC heap
-        - global concurrent marking  
-            - initial mark(**STW**)（初始标记）       
-            找到GC Roots直接引用的Region。其实是**Young GC的一部分**
-            - root region scaning（并发进行）（根区域扫描）  
-            在initial mark的**新生代survivor 区扫描对老年代的引用**（因为Eden区已经清空了），并标记被引用的对象。该阶段与应用程序同时运行，并且只有完成该阶段后，才能开始下一次 STW 年轻代垃圾回收
-            - Concurrent marking phase（并发标记）    
-            可达性分析，该阶段与应用程序并发运行，**可以被 STW 年轻代垃圾回收中断**
-            - Remark phase（重新标记）  
-            会**STW**
-            - Cleanup phase（清理） 
-                - cleanup（**STW**）  
-                    - 统计得出收集收益高的若干老年代Region并发标记，提供给接下来的Mixed GC回收。
-                    - 清空没有存活对象的Region，不用等待GC阶段
-                    - 更新Rset
-                - concurrent-cleanup（并发）  
-                返回空Region给free list
-    - 缺点
-        - 内存占用，见上
-        - 负载  
-        为实现原始快照，写前屏障跟踪并发时的指针变化
-    - G1参数
-        - -XX:+UseG1GC：启用 G1
-        - -XX:MaxGCPauseMillis=200：设置允许的最大GC停顿时间(GC pause time)，这只是一个期望值，实际可能会超出，可以和年轻代大小调整一起并用来实现。默认是200ms
-        - **-XX:G1NewSizePercent**：新生代最小的堆空间占比，默认是5%
-        - -XX:G1MaxNewSizePercent：新生代最大的堆空间占比，默认是60%
-        - **-XX:G1HeapRegionSize=n**：每个分区的大小，默认值是会根据整个堆区的大小计算出来，范围是1M~32M，取值是2的幂，计算的倾向是尽量有2048个分区数。比如如果是2G的heap，那region=1M。16Gheap,region=8M
-        - -XX:ParallelGCThreads=n  
-        **设置 STW 工作线程数的值**。将 n 的值设置为逻辑处理器的数量。n 的值与逻辑处理器的数量相同，最多为 8。
-        如果逻辑处理器不止八个，则将 n 的值设置为逻辑处理器数的 5/8 左右。这适用于大多数情况，除非是较大的 SPARC 系统，其中 n 的值可以是逻辑处理器数的 5/16 左右
-        - -XX:ConcGCThreads=n  
-        并发标记并发执行的线程数，默认值接近整个应用线程数的1/4
-        - -XX:MaxTenuringThreshold=n：晋升到老年代的“年龄”阀值，默认值为 15
-        - **-XX:InitiatingHeapOccupancyPercent=45**：一般会简写IHOP，默认是45%，设置触发标记周期的 Java 堆占用率阈值，包括old+humongous。如果经常出现FullGC，可以调低该值，尽早的回收可以减少FullGC的触发，但如果过低，则并发阶段会更加频繁，降低应用的吞吐
-        - -XX:G1HeapWastePercent：允许的浪费堆空间的占比，默认是5%。如果并发标记可回收的空间小于5%，则不会触发MixedGC
-        - -XX:G1MixedGCCountTarget：当占用内存超过InitiatingHeapOccupancyPercent阈值时, 最多通过多少次Mixed GC来将内存控制在阀值之下。默认值是8
-        - 参数建议
-            - 年轻代大小：避免使用 -Xmn 选项或 -XX:NewRatio 等其他相关选项显式设置年轻代大小。固定年轻代的大小会覆盖MaxGCPauseMillis目标。
-            - MaxGCPauseMillis：G1 GC 的吞吐量目标是 **90% 的应用程序时间和 10%的垃圾回收时间**。如果将其与 Java HotSpot VM 的吞吐量回收器相比较，目标则是 99% 的应用程序时间和 1% 的垃圾回收时间。因此，当您评估 G1 GC 的吞吐量时，暂停时间目标不要太严苛。目标太过严苛表示您愿意承受更多的垃圾回收开销，而这会**直接影响到吞吐量**。当您评估 G1 GC 的延迟时，请设置所需的（软）实时目标，G1 GC 会尽量满足。副作用是，吞吐量可能会受到影响。
+## 3.5**G1**
+- 设计目标和实现方式  
+    - 基于Region的堆内存布局
+        - 把连续的Java堆划分为多个大小相等的独立区域Region，大小从 1 MB 到 32 MB 不等，具体取决于堆大小。目标是产生不超过 2048 个区域
+        - 每个Region可以扮演Eden、Survivor、老年代
+        - Humongous Region存储大对象，超过Region一半大小的对象都被视为“巨型对象”，被分配到老年代中的“Humongous regions”。在Cleanup phase或Full GC时会清理死亡的巨型对象
+        - **每次收集的空间是Region大小的整数倍**
+        - 跟踪每个Region里面垃圾价值（回收所获得的空间大小及回收所需时间的经验值）大小，维护一个优先级列表，优先处理收益最大的，即 Garbage First
+    - 力求达到的暂停时间目标（软实时）  
+        - 在young GC期间，G1 GC 会调整其年轻代空间（eden 和survivor 大小）以满足软实时目标。
+        - 在mixed GC期间，G1 GC 会根据mixed GC的
+        -XX:G1MixedGCCountTarget、-XX:G1HeapWastePercent、-XX:InitiatingHeapOccupancyPercent 调整所回收的老年代 region数量
+    - 减少碎片，尽可能回收更多的堆空间，同时尽可能不超出暂停时间目标
+        - 将一组或多组Region（称为Collection Set (CSet)）中的存活对象以增量、并行的方式复制到新区域来实现压缩
+    - 每个Region都维护自己的记忆集RSet，记录别的Region指向自己的指针。独立的 RSet 可以并行、独立地回收Region，因为只需要对Region（而不是整个堆）的 RSet 进行扫描获取指向该Region的引用。G1 GC 使用写后屏障记录堆的更改并更新 RSet。
+- 难点
+    - 跨Region引用对象  
+    每个Region都维护自己的记忆集RSet，记录别的Region指向自己的指针。本质是一个哈希表，Key是**别的Region的起始地址**，Value是一个集合，里面存储的元素是**卡表的索引号**
+    卡表实现更复杂，且由于Region数量比传统收集器的分代数量要多，因此更占内存，耗费大约10%~20%堆容量
+    - 并发标记阶段如何保证收集线程与用户线程互不干扰  
+        - SATB原始快照（CMS是增量更新）
+        - 把Region的一部分空间划分出来用于并发回收过程中新对象分配
+        - 如果内存回收速度赶不上内存分配速度，需要冻结用户线程，导致Full GC而长时间“Stop The World”
+    - 可靠的停顿预测模型
+        - 衰减均值
+        - 记录每个Region回收耗时，每个Region脏卡数量等
+        - 通过这些信息预测有哪些Region组成的回收机可以在不超期望停顿时间约束下获得最高收益
+- 运行过程
+![](../picture/JVM/G1-1.png) 
+![](../picture/JVM/G1-2.png)
+- GC模式
+    - Young GC：选定所有年轻代里的Region。通过控制年轻代的region个数，即年轻代内存大小，来控制young GC的时间开销
+    - Mixed GC：选定所有年轻代里的Region，外加根据global concurrent marking统计得出收集收益高的若干老年代Region。在用户指定的开销目标范围内尽可能选择收益高的老年代Region。
+    - 什么时候开启Mixed GC
+    **global concurrent marking结束后，开启Mixed GC**
+    - 什么时候开启并发周期？
+        - 每次Young GC结束的时候，当young gc结束，堆内存已经达到了 -XX:InitiatingHeapOccupancyPercent，开启global concurrent marking
+        - 在分配任何Humongous region（巨型区域）之前，会检查标记阈值，可能会启动一个并发周期
+    因为老年代空间中的使用内存发生变化只有一个情形：Young GC的时候。所以在这个时候判断是最合理的
+    - Full GC：如果mixed GC实在无法跟上程序分配内存的速度，导致老年代填满无法继续进行Mixed GC，就会使用serial old GC（full GC）来收集整个GC heap
+    - global concurrent marking  
+        - initial mark(**STW**)（初始标记）       
+        找到GC Roots直接引用的Region。其实是**Young GC的一部分**
+        - root region scaning（并发进行）（根区域扫描）  
+        在initial mark的**新生代survivor 区扫描对老年代的引用**（因为Eden区已经清空了），并标记被引用的对象。该阶段与应用程序同时运行，并且只有完成该阶段后，才能开始下一次 STW 年轻代垃圾回收
+        - Concurrent marking phase（并发标记）    
+        可达性分析，该阶段与应用程序并发运行，**可以被 STW 年轻代垃圾回收中断**
+        - Remark phase（重新标记）  
+        会**STW**
+        - Cleanup phase（清理） 
+            - cleanup（**STW**）  
+                - 统计得出收集收益高的若干老年代Region并发标记，提供给接下来的Mixed GC回收。
+                - 清空没有存活对象的Region，不用等待GC阶段
+                - 更新Rset
+            - concurrent-cleanup（并发）  
+            返回空Region给free list
+- 缺点
+    - 内存占用，见上
+    - 负载  
+    为实现原始快照，写前屏障跟踪并发时的指针变化
+- G1参数
+    - -XX:+UseG1GC：启用 G1
+    - -XX:MaxGCPauseMillis=200：设置允许的最大GC停顿时间(GC pause time)，这只是一个期望值，实际可能会超出，可以和年轻代大小调整一起并用来实现。默认是200ms
+    - **-XX:G1NewSizePercent**：新生代最小的堆空间占比，默认是5%
+    - -XX:G1MaxNewSizePercent：新生代最大的堆空间占比，默认是60%
+    - **-XX:G1HeapRegionSize=n**：每个分区的大小，默认值是会根据整个堆区的大小计算出来，范围是1M~32M，取值是2的幂，计算的倾向是尽量有2048个分区数。比如如果是2G的heap，那region=1M。16Gheap,region=8M
+    - -XX:ParallelGCThreads=n  
+    **设置 STW 工作线程数的值**。将 n 的值设置为逻辑处理器的数量。n 的值与逻辑处理器的数量相同，最多为 8。
+    如果逻辑处理器不止八个，则将 n 的值设置为逻辑处理器数的 5/8 左右。这适用于大多数情况，除非是较大的 SPARC 系统，其中 n 的值可以是逻辑处理器数的 5/16 左右
+    - -XX:ConcGCThreads=n  
+    并发标记并发执行的线程数，默认值接近整个应用线程数的1/4
+    - -XX:MaxTenuringThreshold=n：晋升到老年代的“年龄”阀值，默认值为 15
+    - **-XX:InitiatingHeapOccupancyPercent=45**：一般会简写IHOP，默认是45%，设置触发标记周期的 Java 堆占用率阈值，包括old+humongous。如果经常出现FullGC，可以调低该值，尽早的回收可以减少FullGC的触发，但如果过低，则并发阶段会更加频繁，降低应用的吞吐
+    - -XX:G1HeapWastePercent：允许的浪费堆空间的占比，默认是5%。如果并发标记可回收的空间小于5%，则不会触发MixedGC
+    - -XX:G1MixedGCCountTarget：当占用内存超过InitiatingHeapOccupancyPercent阈值时, 最多通过多少次Mixed GC来将内存控制在阀值之下。默认值是8
+    - 参数建议
+        - 年轻代大小：避免使用 -Xmn 选项或 -XX:NewRatio 等其他相关选项显式设置年轻代大小。固定年轻代的大小会覆盖MaxGCPauseMillis目标。
+        - MaxGCPauseMillis：G1 GC 的吞吐量目标是 **90% 的应用程序时间和 10%的垃圾回收时间**。如果将其与 Java HotSpot VM 的吞吐量回收器相比较，目标则是 99% 的应用程序时间和 1% 的垃圾回收时间。因此，当您评估 G1 GC 的吞吐量时，暂停时间目标不要太严苛。目标太过严苛表示您愿意承受更多的垃圾回收开销，而这会**直接影响到吞吐量**。当您评估 G1 GC 的延迟时，请设置所需的（软）实时目标，G1 GC 会尽量满足。副作用是，吞吐量可能会受到影响。
 
-- ZGC  
+## 3.6ZGC  
 # 4 性能监控与故障处理工具
 [虚拟机性能监控与故障处理工具](https://blog.csdn.net/zhangzhaoyuan30/article/details/89644918)
 - jps
@@ -276,8 +316,11 @@
     - 版本号
     - 常量池
         - 字面量
+            - 需要使用ldc的基本数据类型的值
+                - 只存int,long,float,double（使用ldc命令从常量池中推送至栈顶，关于ldcx详见Q11），因为短整型直接用字节码指令iconst_0,lconst_0,fconst_0,d_const_0,bipush,sipush[JVM指令集整理](https://juejin.cn/post/6844903461339807757)
+                - 基本类型的包装类的大部分都实现了常量池技术，Byte,Short,Integer,Long,Character,Boolean，另外两种**浮点**数类型的包装类则没有实现。**-128~127**
+            - final常量的值
             - 字符串
-            - final常量
         - 符号引用
             - 类和接口全限定名
             - 字段、方法的名称和描述符
@@ -306,7 +349,7 @@
     - LocalVariableTable（Code属性）
     局部变量表中变量和源码中定义的变量的关系
     - ConstantValue属性（字段表）
-        - 作用是通知虚拟机自动为静态变量（static）赋值
+        - 作用是通知虚拟机在类加载的准备阶段自动为static final 赋值
         - static变量赋值有两种方法
             - 基本或String型常量使用ConstantValue
             - 其他用\<cinit>()方法赋值
@@ -355,7 +398,7 @@
 - 双亲委派模型：父加载器无法加载才由子加载器加载
     - 作用：双亲委派模型保证了Java程序的稳定运行，可以**避免类的重复加载，也保证了 Java 的核心 API 不被篡改**，比如我们编写一个称为 java.lang.Object 类的话，那么程序运行的时候，系统就会出现多个不同的 Object 类。
     - 实现方式  
-    ```
+    ```JAVA
     protected Class<?> loadClass(String name, boolean resolve)
         throws ClassNotFoundException
     {
@@ -503,5 +546,19 @@
                 - 标量（Scalar）：不可进一步分解的数据，比如基本数据类型，否则称为聚合量
                 - 如果一个对象不会逃逸，那么可以不用创建对象，而是用成员变量代替，称为标量替换
                 - 优点：可以栈上分配
-        
-    
+# 10 创建了几个对象？
+[从字符串到常量池，一文看懂String类设计](https://zhuanlan.zhihu.com/p/149055800)  
+String s1 = new String("aaa");
+- 字符串常量池Interned String Pool，存的是引用。字符串常量池用StringTable实现
+- ldc：
+    >StringTable在每个HotSpot VM的实例里只有一份，被所有的类共享。类的运行时常量池里的CONSTANT_String类型的常量，经过**解析（resolve）**之后，同样存的是字符串的引用；解析的过程会去查询StringTable，以保证**运行时常量池所引用的字符串与StringTable**所引用的是一致的
+- JDK6和JDK7
+    ```JAVA
+    String s3 = new String("1") + new String("1");// 创建了一个堆上的对象
+    s3.intern();// JDK6：复制到永久代，JDK7：不复制 共同点：保存引用到StringTable
+    String s4 = "11"; //从StringTable获取引用 
+    System.out.println(s3 == s4);// JDK6：false，JDK7：true
+    ```
+    - JDK6：被StringTable引用的字符串实例存在永久代上
+    - JDK7：被StringTable引用的字符串实例存在堆上，因此intern方法不用复制
+# 11
