@@ -4,9 +4,9 @@
     - [1.1线程私有](#11线程私有)
     - [1.2共享](#12共享)
         - [1.2.1 堆：存储对象实例和数组](#121-堆存储对象实例和数组)
-        - [1.2.1 方法区（逻辑区域）](#121-方法区逻辑区域)
-        - [1.2.1 运行时常量池Runtime Constant Pool](#121-运行时常量池runtime-constant-pool)
-        - [1.2.1 直接内存](#121-直接内存)
+        - [1.2.2 方法区（逻辑区域）：类信息、常量、静态变量、即时编译器编译后的代码](#122-方法区逻辑区域类信息常量静态变量即时编译器编译后的代码)
+        - [1.2.3 运行时常量池Runtime Constant Pool](#123-运行时常量池runtime-constant-pool)
+        - [1.2.4 直接内存](#124-直接内存)
 - [2.虚拟机对象？](#2虚拟机对象)
 - [3.垃圾收集](#3垃圾收集)
     - [3.1确定对象是否死亡](#31确定对象是否死亡)
@@ -17,6 +17,9 @@
     - [3.6ZGC](#36zgc)
 - [4 性能监控与故障处理工具](#4-性能监控与故障处理工具)
 - [5类文件结构](#5类文件结构)
+    - [5.1 组成](#51-组成)
+    - [5.2 各种常量池总结？](#52-各种常量池总结)
+    - [5.3 创建了几个对象？](#53-创建了几个对象)
 - [6.字节码指令？](#6字节码指令)
 - [7.类加载机制](#7类加载机制)
     - [7.1类加载时机？](#71类加载时机)
@@ -29,8 +32,6 @@
 - [9编译与代码优化](#9编译与代码优化)
     - [9.1编译期优化](#91编译期优化)
     - [9.2运行期优化](#92运行期优化)
-- [10 创建了几个对象？](#10-创建了几个对象)
-- [11](#11)
 
 <!-- /TOC -->
 # 1.内存区域
@@ -42,46 +43,59 @@
 - 虚拟机栈（栈帧）
     - -Xss
     - 局部变量表
-        - 存放编译期可知的**基本数据类型**、**引用类型**
+        - 存放编译期可知的**基本数据类型**、**引用类型**、Return Address类型
         - 按Slot存储
-        - 所需内存空间在**编译器完成分配**，当进入一个方法时，所需空间完全确定，运行期不会改变局部变量表大小
+            - 32位以内的类型只占用一个slot（包括returnAddress类型），64位的类型占用两个slot（1ong和double）
+            - 可以重用的，如果一个局部变量过了其作用域
+        - 所需内存空间在**编译器完成分配**，写在方法表Code属性中max_locals，运行期不会改变局部变量表大小
+        - 如果是实例方法，第一个slot为this
     - 操作数栈
-    - 动态链接
-    - 方法出口    
+        - 基于栈的结构：指令流中的指令大部分都是零地址指令，依赖操作数栈进行工作（见 8.3）
+        - 最大深度也在编译的时候写入到方法表的Code属性的max_stacks
+        - 随着字节码指令的执行，会从局部变量表或对象实例的字段中复制到操作数栈，再随着计算的进行将栈中元素出栈到局部变量表或者返回给方法调用者。一个完整的方法执行期间往往包含多个这样出栈/入栈的过程。
+    - 动态链接：指向运行时常量池中该栈所属方法的符号引用，持有这个引用的目的是为了**支持方法调用过程中的动态连接**(Dynamic Linking)
+    - 方法出口
+        - 保存PC 计数器中的值
+        - 方法退出的过程实际上就等于把当前栈帧出栈，一般过程为：
+            - 恢复上层方法的局部变量表和操作数栈
+            - 把返回值压入调用者栈帧的操作数栈中
+            - 调整 PC 计数器的值，以指向方法调用指令后面的一条指令
 ## 1.2共享
 ### 1.2.1 堆：存储对象实例和数组
 - -XMS、-Xmx
-### 1.2.1 方法区（逻辑区域）
-- 永久代：类信息、常量、静态变量、即时编译器编译后的代码，Full GC
+### 1.2.2 方法区（逻辑区域）：类信息、常量、静态变量、即时编译器编译后的代码
+- 永久代：Full GC
     - jdk7
         - 符号引用(Symbols Reference)->native
         - 字面量(interned strings)->堆
-        - 静态变量(class statics)->堆（class对象末尾）
-        - SymbolTable / StringTable，在native memory里，JDK7是把SymbolTable引用的Symbol移动到了native memory，而StringTable引用的java.lang.String实例则从PermGen移动到了普通Java heap
+        - 静态变量(class statics)->堆（class对象中末尾）
+        - SymbolTable / StringTable，在native memory里。JDK7是把SymbolTable引用的Symbol移动到了native memory，而StringTable引用的java.lang.String实例则从PermGen移动到了普通Java heap
 - 为什么用元数据区替代方法区？
-    - 更容易遇到内存溢出的问题（永久代有-XX：MaxPermSize的上限，即使不设置也有默认大小，而J9和JRockit只要没有触碰到进程可用内存的上限
+    - 更容易遇到内存溢出的问题（永久代有-XX：MaxPermSize的上限，即使不设置也有默认大小，而J9和JRockit只要没有触碰到进程可用内存的上限）
     - 要把JRockit中的优秀功能移植到HotSpot虚拟机时，因为两者对方法区实现的差异而面临诸多困难
     - interned-strings存储在永久代，会导致大量的性能问题和OOM错误    
 - 元数据区（使用本地内存）
     - Klass MetaSpace：Class 文件在 JVM 里的运行时数据结构
-    - NoKlass MetaSpace：Klass 相关的其他的内容，runtime constant pool
-- 参数
-    - -XX:MetaspaceSize，初始空间大小，达到该值就会触发垃圾收集进行类型卸载，同时GC会对该值进行调整：如果释放了大量的空间，就适当降低该值；如果释放了很少的空间，那么在不超过MaxMetaspaceSize时，适当提高该值。
-    - -XX:MaxMetaspaceSize，最大空间，默认是没有限制。    
-　　        除了上面两个指定大小的选项以外，还有两个与 GC 相关的属性：
-    - -XX:MinMetaspaceFreeRatio，在GC之后，最小的Metaspace剩余空间容量的百分比
-    - -XX:MaxMetaspaceFreeRatio，在GC之后，最大的Metaspace剩余空间容量的百分比 
-- 其他
-[Metaspace引起的FullGC问题排查过程及解决方案](https://zhuanlan.zhihu.com/p/70418841) 
-### 1.2.1 运行时常量池Runtime Constant Pool
-（方法区的一部分），每个类一个，其中的引用类型常量（例如CONSTANT_String、CONSTANT_Class、CONSTANT_MethodHandle、CONSTANT_MethodType之类）都存的是引用。
-### 1.2.1 直接内存
+    - NoKlass MetaSpace：Klass 相关的其他的内容，**Runtime Constant Pool**
+    - 参数
+        - -XX:MetaspaceSize，初始空间大小，达到该值就会触发垃圾收集进行类型卸载，同时GC会对该值进行调整：如果释放了大量的空间，就适当降低该值；如果释放了很少的空间，那么在不超过MaxMetaspaceSize时，适当提高该值。
+        - -XX:MaxMetaspaceSize，最大空间，默认是没有限制。  
+        - 除了上面两个指定大小的选项以外，还有两个与 GC 相关的属性：
+            - -XX:MinMetaspaceFreeRatio，在GC之后，最小的Metaspace剩余空间容量的百分比
+            - -XX:MaxMetaspaceFreeRatio，在GC之后，最大的Metaspace剩余空间容量的百分比 
+    - 其他
+    [Metaspace引起的FullGC问题排查过程及解决方案](https://zhuanlan.zhihu.com/p/70418841) 
+### 1.2.3 运行时常量池Runtime Constant Pool
+- class文件常量池在运行时的数据结构（class文件有的它全都有，但是需要解析，参考[关于常量池中的String](https://zhuanlan.zhihu.com/p/51655449)）。
+- 方法区的一部分（1.7存在永久代，1.8存在元数据区），**每个类一个**
+- 其中的引用类型常量（例如CONSTANT_String、CONSTANT_Class、CONSTANT_MethodHandle、CONSTANT_MethodType之类）都存的是**引用**。
+### 1.2.4 直接内存
 - 作用
     - 减轻垃圾收集器的压力
     - 减少将数据从堆内内存拷贝到堆外内存的步骤，提升程序I/O性能
 - 内存回收
     - Cleaner extends PhantomReference\<Object\>
-    - DirectByteBuffer构造函数中会调用Cleaner.create(this,new Deallocator(base, size, cap))，使自己被虚引用引用，并注册一个回调函数Deallocator
+    - DirectByteBuffer构造函数中会调用Cleaner.create(**this**,new Deallocator(base, size, cap))，使自己被虚引用引用，并注册一个回调函数Deallocator
     - 回调函数中会释放内存
     ```JAVA
     private static class Deallocator implements Runnable  { 
@@ -97,7 +111,7 @@
         } 
     }
     ```
-- gc过程中如果发现某个对象只有PhantomReference引用，在gc完毕的时候会回调Cleaner.clean()，在clean方法中回调Deallocator的run方法
+- gc过程中如果发现某个对象只有PhantomReference引用，在gc完毕的时候会回调Cleaner.clean()，在clean方法中回调Deallocator的run方法(见"引用分类")
 # 2.虚拟机对象？
 - 创建
     - 加载  
@@ -130,7 +144,7 @@
 - 可达性分析算法
     - GC roots  
     ![](../picture/JVM/GCRoots.png)
-- 应用分类  
+- 引用分类  
 ![](../picture/JVM/引用类型.png)
 - 对象死亡过程与拯救    
     - 第一次标记：  
@@ -148,13 +162,13 @@
         - Class对象没有在任何地方被引用，无法在任何地方通过反射访问该类
 ## 3.2垃圾收集算法
 - 分代收集理论
-    -内容
+    - 内容
         - 弱分代假说：绝大多数对象朝生夕死
         - 强分代假说：熬过越多次垃圾收集过程的对象就越难以消亡
         - 跨代引用假说：跨代引用占极少数  
         在新生代建立一个记忆集，把老年代分成若干小块，标识出哪一块会存在跨代引用
     - 缺点
-- 标记清楚算法  
+- 标记清除算法  
 标记和清除效率都不高、内存碎片
 - 复制算法
     - 在对象存活率高时要进行较多复制操作，效率变低
@@ -181,7 +195,7 @@
     - 程序不执行时（未分配CPU时间，sleep或blocked），无法执行至安全点
     - 安全区域指能确保在某一段代码片段之中，引用关系不发生变化。可以看作是延伸的安全点
 - 记忆集和卡表  
-    - 解决跨代引用和部分区域收集的问题
+    - 为解决对象跨代引用所带来的问题，垃圾收集器在**新生代**中建立了名为记忆集（Remembered Set）的数据结构，用以**避免把整个老年代加进GC Roots扫描范围**。
     - 从非收集区域指向收集区域的指针集合，可以表示为一个数组
     - 卡页内有一个对象的字段存在跨代指针，就将对应卡表的数组元素值标为1，否则标为0。标为1的元素对应的卡页内存加入GC Roots
 - 写屏障  
@@ -193,6 +207,7 @@
 - Serial
     - 单线程，且要暂停工作线程
     - 用于client模式
+    - 新生代采用复制算法，老年代标记整理
 - ParNew
     - 多线程版本Serial收集器
     - 能与CMS配合
@@ -200,6 +215,7 @@
     - -XX:MaxGCPauseMillis 控制最大垃圾收集停顿时间
     - -XX:GCTimeRatio 垃圾收集时间占比
     - -XX:+UseAdaptiveSizePolicy 不需要配置一些参数和上述俩参数
+    - 不能与CMS配合
 - CMS
 ![](../picture/JVM/CMS-1.png)  
 ![](../picture/JVM/CMS-2.png)  
@@ -226,11 +242,11 @@
         -XX:G1MixedGCCountTarget、-XX:G1HeapWastePercent、-XX:InitiatingHeapOccupancyPercent 调整所回收的老年代 region数量
     - 减少碎片，尽可能回收更多的堆空间，同时尽可能不超出暂停时间目标
         - 将一组或多组Region（称为Collection Set (CSet)）中的存活对象以增量、并行的方式复制到新区域来实现压缩
-    - 每个Region都维护自己的记忆集RSet，记录别的Region指向自己的指针。独立的 RSet 可以并行、独立地回收Region，因为只需要对Region（而不是整个堆）的 RSet 进行扫描获取指向该Region的引用。G1 GC 使用写后屏障记录堆的更改并更新 RSet。
+    - 每个Region都维护自己的记忆集RSet，因为只需要对Region（而不是整个堆）的 RSet 进行扫描获取指向该Region的引用。
 - 难点
     - 跨Region引用对象  
-    每个Region都维护自己的记忆集RSet，记录别的Region指向自己的指针。本质是一个哈希表，Key是**别的Region的起始地址**，Value是一个集合，里面存储的元素是**卡表的索引号**
-    卡表实现更复杂，且由于Region数量比传统收集器的分代数量要多，因此更占内存，耗费大约10%~20%堆容量
+        - 每个Region都维护自己的记忆集RSet，记录别的Region指向自己的指针。本质是一个哈希表，Key是**别的Region的起始地址**，Value是一个集合，里面存储的元素是**卡表的索引号**。G1 GC 使用**写后屏障**记录堆的更改并更新 RSet。  
+        - 卡表实现更复杂，且由于Region数量比传统收集器的分代数量要多，因此**更占内存**，耗费大约10%~20%堆容量
     - 并发标记阶段如何保证收集线程与用户线程互不干扰  
         - SATB原始快照（CMS是增量更新）
         - 把Region的一部分空间划分出来用于并发回收过程中新对象分配
@@ -238,7 +254,7 @@
     - 可靠的停顿预测模型
         - 衰减均值
         - 记录每个Region回收耗时，每个Region脏卡数量等
-        - 通过这些信息预测有哪些Region组成的回收机可以在不超期望停顿时间约束下获得最高收益
+        - **通过这些信息预测有哪些Region组成的回收机可以在不超期望停顿时间约束下获得最高收益**
 - 运行过程
 ![](../picture/JVM/G1-1.png) 
 ![](../picture/JVM/G1-2.png)
@@ -308,36 +324,32 @@
 线程快照
     - -l 锁的附加信息
 # 5类文件结构
-- 两数据类型
-    - 无符号数
-    - 表
-- 组成
-    - 魔术
-    - 版本号
-    - 常量池
-        - 字面量
-            - 需要使用ldc的基本数据类型的值
-                - 只存int,long,float,double（使用ldc命令从常量池中推送至栈顶，关于ldcx详见Q11），因为短整型直接用字节码指令iconst_0,lconst_0,fconst_0,d_const_0,bipush,sipush[JVM指令集整理](https://juejin.cn/post/6844903461339807757)
-                - 基本类型的包装类的大部分都实现了常量池技术，Byte,Short,Integer,Long,Character,Boolean，另外两种**浮点**数类型的包装类则没有实现。**-128~127**
-            - final常量的值
-            - 字符串
-        - 符号引用
-            - 类和接口全限定名
-            - 字段、方法的名称和描述符
-    - 访问标志
-    - 类索引、父类索引、方法索引
-    - 字段表、方发表、属性表
-        - 包含
-            - 访问标志
-            - 名称索引
-            - 描述符索引   
-            方法按先参数列表后返回值  
-            例：([CI)I表示  
-            int indexOf(char[] ch,int index)        
-            - 属性表
-        - **重载**
-            - Java代码层面：方法名称、参数顺序、参数类型
-            - 字节码层面：还包括返回值、受检查异常表
+两数据类型：无符号数、表
+## 5.1 组成
+- 魔数
+- 版本号
+- 常量池
+    - 字面量
+        - 基本数据类型的值
+            - 常量池中只存范围内的int,long,float,double（使用ldc命令从常量池中推送至栈顶，关于ldcx详见Q11），因为短整型直接用字节码指令iconst_0,lconst_0,fconst_0,d_const_0,bipush,sipush[JVM指令集整理](https://juejin.cn/post/6844903461339807757)
+        - 字符串（包括变量名和字符串值）
+    - 符号引用
+        - 类和接口全限定名
+        - 字段、方法的名称和描述符
+- 访问标志
+- 类索引、父类索引、方法索引
+- 字段表、方发表、属性表
+    - 包含
+        - 访问标志
+        - 名称索引
+        - 描述符索引   
+        方法按先参数列表后返回值  
+        例：([CI)I表示  
+        int indexOf(char[] ch,int index)        
+        - 属性表
+    - **重载**
+        - Java代码层面：方法名称、参数顺序、参数类型
+        - 字节码层面：还包括返回值、受检查异常表
 - 属性表是什么？
     - Code（方法表）
         - 栈深度
@@ -348,11 +360,29 @@
     源码和字节码行号对应关系
     - LocalVariableTable（Code属性）
     局部变量表中变量和源码中定义的变量的关系
-    - ConstantValue属性（字段表）
+    - **ConstantValue属性**（字段表）
         - 作用是通知虚拟机在类加载的准备阶段自动为static final 赋值
         - static变量赋值有两种方法
             - 基本或String型常量使用ConstantValue
             - 其他用\<cinit>()方法赋值
+## 5.2 各种常量池总结？
+[各种常量池总结](https://www.jianshu.com/p/b67317fb4a97)
+![](../picture/JVM/常量池.png)
+## 5.3 创建了几个对象？
+[从字符串到常量池，一文看懂String类设计](https://zhuanlan.zhihu.com/p/149055800)  
+String s1 = new String("aaa");
+- 字符串常量池Interned String Pool，存的是引用。字符串常量池用StringTable实现
+- ldc：
+    >StringTable在每个HotSpot VM的实例里只有一份，被所有的类共享。类的运行时常量池里的CONSTANT_String类型的常量，经过**解析（resolve）**之后，同样存的是字符串的引用；解析的过程会去查询StringTable，以保证**运行时常量池所引用的字符串与StringTable**所引用的是一致的
+- JDK6和JDK7
+    ```JAVA
+    String s3 = new String("1") + new String("1");// 创建了一个堆上的对象
+    s3.intern();// JDK6：复制到永久代，JDK7：不复制 共同点：保存引用到StringTable
+    String s4 = "11"; //从StringTable获取引用 
+    System.out.println(s3 == s4);// JDK6：false，JDK7：true
+    ```
+    - JDK6：被StringTable引用的字符串实例存在永久代上
+    - JDK7：被StringTable引用的字符串实例存在堆上，因此intern方法不用复制
 # 6.字节码指令？
 - 同步指令
     - 方法级  
@@ -546,19 +576,3 @@
                 - 标量（Scalar）：不可进一步分解的数据，比如基本数据类型，否则称为聚合量
                 - 如果一个对象不会逃逸，那么可以不用创建对象，而是用成员变量代替，称为标量替换
                 - 优点：可以栈上分配
-# 10 创建了几个对象？
-[从字符串到常量池，一文看懂String类设计](https://zhuanlan.zhihu.com/p/149055800)  
-String s1 = new String("aaa");
-- 字符串常量池Interned String Pool，存的是引用。字符串常量池用StringTable实现
-- ldc：
-    >StringTable在每个HotSpot VM的实例里只有一份，被所有的类共享。类的运行时常量池里的CONSTANT_String类型的常量，经过**解析（resolve）**之后，同样存的是字符串的引用；解析的过程会去查询StringTable，以保证**运行时常量池所引用的字符串与StringTable**所引用的是一致的
-- JDK6和JDK7
-    ```JAVA
-    String s3 = new String("1") + new String("1");// 创建了一个堆上的对象
-    s3.intern();// JDK6：复制到永久代，JDK7：不复制 共同点：保存引用到StringTable
-    String s4 = "11"; //从StringTable获取引用 
-    System.out.println(s3 == s4);// JDK6：false，JDK7：true
-    ```
-    - JDK6：被StringTable引用的字符串实例存在永久代上
-    - JDK7：被StringTable引用的字符串实例存在堆上，因此intern方法不用复制
-# 11
