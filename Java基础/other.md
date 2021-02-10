@@ -1,1 +1,0 @@
-- 基本类型的包装类的大部分都实现了常量池技术，Byte,Short,Integer,Long,Character,Boolean，另外两种**浮点**数类型的包装类则没有实现。**-128~127**

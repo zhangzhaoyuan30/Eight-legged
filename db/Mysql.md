@@ -14,21 +14,27 @@
 - [12.覆盖索引？](#12覆盖索引)
 - [13.优化索引？](#13优化索引)
 - [14.Mysql架构？](#14mysql架构)
+    - [14.1 应用层](#141-应用层)
+    - [14.2 服务层](#142-服务层)
+    - [14.2.1 优化器](#1421-优化器)
+    - [14.3 2.3 存储引擎层](#143-23-存储引擎层)
 - [15.SQL优化？](#15sql优化)
 - [16.剖析sql查询?](#16剖析sql查询)
 - [17.MySQL配置优化？](#17mysql配置优化)
 - [18.Mysql的几种log？](#18mysql的几种log)
+    - [18.1 Redo Log](#181-redo-log)
+    - [18.2 undo log](#182-undo-log)
+    - [18.3 binlog](#183-binlog)
+- [19 Mysql数据写入过程](#19-mysql数据写入过程)
+    - [19.1 双写是什么？](#191-双写是什么)
 
 <!-- /TOC -->
 # 1.事务属性有哪些，怎么实现的？
-![](../picture/Mysql/ACID.png)
-- 隔离性  
-通过锁实现见2  
-- 原子性和持久性  
-redo log  
+![](../picture/db/Mysql/ACID.png)
+- 隔离性：通过锁实现见2  
+- 原子性和持久性：redo log  
     - 事务提交时必须先将事务的所有日志写入redo log
-- 一致性
-undo log
+- 一致性：undo log
 # 2.事务隔离级别有哪些，怎么实现的？
 [MySQL事务隔离级别、数据一致性与加锁处理分析](https://zhuanlan.zhihu.com/p/165365896)  
 - READ UNCOMMITED
@@ -47,8 +53,7 @@ undo log
 - begin/start transaction 命令并不是一个事务的起点，在执行到它们之后的第一个操作 InnoDB 表的语句，事务才真正启动。如果你想要马上启动一个事务，可以使用 start transaction with consistent snapshot 这个命令。
 - 解决丢失更新加锁
 # 3.MVCC是什么？怎么实现的？
-- 作用
-减少锁的使用
+- 作用：减少锁的使用
 - 原理
     - 在MySQL中建表时，每个表都会有三列隐藏记录，其中和MVCC有关系的有两列
         - 数据行的版本号（DB_TRX_ID）
@@ -86,14 +91,14 @@ undo log
         - 在对一个表做增删改查操作的时候，加MDL读锁；
         - 当要对表做结构变更操作的时候，加MDL写锁。
 - 行锁
-    共享锁
-    排它锁
+    - 共享锁
+    - 排它锁
 - 表锁
+    - 意向锁：为了防止加表锁时遍历所有行锁，只对表级锁生效，且意向锁之间不互斥
     - 意向共享  
-    加共享锁前必须先取得该表的 IS 锁
+    加行共享锁前必须先取得该表的 IS 锁
     - 意向排它  
-    加排他锁前必须先取得该表的 IX 锁
-    - 意向锁只对普通表锁有用，对其他意向锁无效
+    加行排他锁前必须先取得该表的 IX 锁
 - 加锁方法
     - 对于 UPDATE、 DELETE 和 INSERT 语句， InnoDB
 会自动给涉及数据集加排他锁（X)；
@@ -107,8 +112,7 @@ undo log
     - 扩张阶段：不断上锁，没有锁被释放
     - 收缩阶段：锁被陆续释放，没有新的加锁（只有提交(commit)或者回滚(rollback)时才是解锁阶段）
 - 2PL可能会导致死锁
-    - 一次封锁法
-    一次封锁法要求事务必须一次性将所有要使用的数据全部加锁，否则就不能继续执行。
+    - 一次封锁法：一次封锁法要求事务必须一次性将所有要使用的数据全部加锁，否则就不能继续执行。
 - 可串行化调度
     - 如果一并行调度的结果等价于某一串行调度的结果，那么这个并行调度称为可串行化的
     - 若所有事务均遵守两段锁协议，则这些事务的所有交叉调度都是可串行化的。
@@ -117,10 +121,12 @@ undo log
 InnoDB 引擎采取的是 wait-for graph 等待图的方法来自动检测死锁，如果发现死锁会回滚undo量最少的事务
 - innodb_lock_wait_timeout  
     超时默认会回滚当前语句  
-    - innodb_rollback_on_timeout  
+- innodb_rollback_on_timeout  
     回滚当前事务
 # 8.InnoDB索引为什么采用B+树？
-- [B树、B+树详解](https://www.cnblogs.com/lianzhilei/p/11250589.html)
+- 参考
+    - [B树、B+树详解](https://www.cnblogs.com/lianzhilei/p/11250589.html)
+    - [B+树看这一篇就够了（B+树查找、插入、删除全上）](https://zhuanlan.zhihu.com/p/149287061)
 - B+树索引能找到的只是被查找数据行所在的页，然后数据库把页读入内存，再在内存中查找
 - 二叉查找树->平衡二叉树->B+树
 - 什么是m阶B+树？
@@ -134,22 +140,22 @@ InnoDB 引擎采取的是 wait-for graph 等待图的方法来自动检测死锁
     - **相邻的叶子节点之间用双向链表相连**
         - 便于**范围查找**和**遍历**（区别4）
 - B+树插入
-    - 如果左右兄弟节点没满先移到兄弟节点
-    - 小于中间节点放左边，大于中间节点放右边
-    - 中间节点放index page
+    - 如果左右兄弟节点没满先移到兄弟节点（旋转）
+    - 拆分成两个节点，小于中间节点放左边，大于中间节点放右边，中间节点放上一层
 - B+树删除
+    - 如果同时是上层节点，用该节点右节点代替
     - 小于填充因子合并节点
-- 和B树区别
-见上
+- 和B树区别：见上
+- 联合索引
+    ![](../picture/db/Mysql/联合索引.png)
 # 9.计算B+树能存多少条记录？
 [InnoDB一棵B+树可以存放多少行数据？](https://www.cnblogs.com/leefreeman/p/8315844.html)
 - 总记录数为：根节点指针数*单个叶子节点记录行数
 - 单个叶子节点（页）中的记录数=16K/1K=16(假设一行记录的数据大小为1k)
 - 假设主键ID为bigint类型，长度为8字节，而指针大小在InnoDB源码中设置为6字节，这样一共14字节，我们一个页中能存放多少这样的单元，其实就代表有多少指针，即16384/14=1170
-- 一棵高度为2的B+树，能存放1170*16=18720条这样的数据记录。根据同样的原理我们可以算出一个高度为3的B+树可以存放：1170*1170*16=21902400条这样的记录。
+- 一棵高度为2的B+树，能存放1170\*16=18720条这样的数据记录。根据同样的原理我们可以算出一个高度为3的B+树可以存放：1170\*1170\*16=21902400条这样的记录。
 # 10.索引的使用
-- 最左前缀
-联合索引的最左N个字段，或字符串索引的最左M个字符
+- 最左前缀：联合索引的最左N个字段，或字符串索引的最左M个字符
     - InnoDB 引擎单一字段索引的长度最大为 767 字节
 - 匹配范围值
 - 精确匹配前N列，范围匹配最后一列
@@ -173,10 +179,12 @@ InnoDB 引擎采取的是 wait-for graph 等待图的方法来自动检测死锁
 - 概念：数据行存在索引的叶子页中
 - 通过主键聚集数据，如果没有则选择一个唯一非空索引代替
 - 优点
-    - 可以把相关数据保存在一起，减少磁盘IO
+    - **可以把相关数据保存在一起，可能在同一个页，减少磁盘IO**
+    - 二级索引使用主键而不是行指针，减少了当出现行移动时二级索引的维护工作
     - 覆盖索引可以直接使用叶节点中的主键值
 - 缺点
     - 插入速度严重依赖于插入顺序
+        - 使用随机主键比如UUID会导致新记录插到之前记录中间 ，导致需要移动之前的记录
         - 如果没有需要聚集的数据可以定义一个自增主键，避免随机
     - 更新聚簇索引列的代价高。需要将行移动到新位置
     - 全表扫描慢，尤其是数据稀疏或页分裂导致数据存储不连续时
@@ -195,15 +203,14 @@ InnoDB 引擎采取的是 wait-for graph 等待图的方法来自动检测死锁
     - USE INDEX
     - FORCE INDEX
 - Multi-Range Read(MRR)  
-减少磁盘随机访问，将随机访问转化为顺序访问。用于range、ref、eq_ref类型的查询。
-    - 二级索引查询的主键进行排序，再按照主键进行书签查找
-    - 减少了缓冲池中页被替换的次数  
-    如果缓冲池不够大放不下一张表的数据，频繁的离散读导致缓存的页被替换出缓冲池
+    - 二级索引查询的主键进行排序，再按照主键进行书签查找。减少了缓冲池中页被替换的次数。
+        - 减少磁盘随机访问，将随机访问转化为顺序访问。用于range、ref、eq_ref类型的查询。
+        - 如果缓冲池不够大放不下一张表的数据，频繁的离散读导致缓存的页被替换出缓冲池。
     - 将范围查询拆分为键值对，避免读出无用数据  
     where a > 1000 and a < 2000 and b=1000 转化为(1000,1000),(1001,1000)...
 - Index Condition Pushdown(ICP)  
 where过滤操作放在存储引擎层，Extra可以看到Using index condition
-    - WHERE 可以过滤的条件是该索引可以覆盖到的范围
+    - WHERE：可以过滤的条件是该索引可以覆盖到的范围
     - 适用条件
         - 查询走索引，explain中的访问方式为range，ref，eq_ref，ref_or_null，并且需要回表查询
         - 二级索引  
@@ -213,58 +220,68 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
     - 顺序访问快。一是不需要多次寻址，二是避免额外排序
     - 覆盖查询很快
 # 14.Mysql架构？
-![Mysql架构](../picture/Mysql/架构.png)
+[MySQL体系架构简介](https://zhuanlan.zhihu.com/p/43736857)
+![Mysql架构](../picture/db/Mysql/架构.png)
+![Mysql架构](../picture/db/Mysql/架构-2.jpg)
+## 14.1 应用层
+连接处理、用户鉴权、安全管理
 - 连接器
     - 通信协议  
     半双工。客户端发送一个单独数据包给服务器（大小由max_allowed_packet控制）。服务器返回多个数据包
     - show full processlist  
-    ![status](../picture/Mysql/status.png)
-- 优化器
-    - 功能
-        - count()、min()、max()  
-            - 查B-Tree最左端或最右端，EXPLAIN会有“Select tables optimized away”，表示优化器已经从执行计划中移除该表，以一个常数取代
-            - MyISAM维护了count变量
-        - 预估并转化为常数表达式
-            - const  
-            该表最多有一个匹配行, 在查询开始时读取。由于只有一行, 因此该行中**列的值可以被优化器的其余部分视为常量**，被优化器从联接中移除。
-        - 覆盖索引扫描
-        - 提前终止查询
-            - LIMIT
-            - 发现一个不成立的条件
-        - 等值传播
-        两个列的值通过等式连接（join on t1.id=t2.id）,可以把一个列的where条件传递到另一个列上
-        - in()
-        in()中数据先排序，然后通过二分查找确定是否满足条件（O(n)复杂度）。而不是转化为多个OR条件子句
-        - 关联查询  
-        嵌套循环关联、子查询放到临时表
-            - 关联查询优化器
-        - 排序优化  
-            - 不能使用索引时，使用文件排序。group by 除了文件排序还会创建临时表  
-            - innodb_sort_buffer_size  
-                需要排序数据量小于此参数，使用**内存快速排序**。否则会先数据分块，每个块快速排序，将各个块放在磁盘中，最后合并
-            - max_length_for_sort_data
-            查询中所有需要的列和ORDER BY的列总大小小于此参数或者列中包含BLOB或TEXT，采用two-pass
-                - single-pass:读取行指针和所需排序字段，排序完成之后再读取所需数据行
-                    - 优点：排序时存储尽可能少数据，使“排序缓冲区”容纳更多行
-                    - 缺点：需两次数据传输，且第二次大量随机IO
-                - two-pass:读取所有列排序。
-                    - 优点：无需随机IO
-                    - 缺点：占用空间大，可能有更多排序块需要合并
-            - 关联  
-            ![](../picture/Mysql/关联orderby.png)
-        - 返回结果  
-        增量逐步返回。例如，处理完最后一个关联表，开始生成第一条结果，就可以向客户端返回结果集。好处是服务端无须存储太多结果降低内存，同时客户端第一时间获得结果
-    - 局限性  
-    [查询优化器的局限性和提示（hint）](https://blog.csdn.net/zhangzhaoyuan30/article/details/88379826)
+    ![status](../picture/db/Mysql/status.png)
+## 14.2 服务层
+- MySQL Management Server & utilities(系统管理)
+- SQL Interface(SQL 接口)
+- SQL Parser(SQL 解析器)
+- Optimizer (查询优化器)
+- Caches & buffers(缓存)
+## 14.2.1 优化器
+- 功能
+    - count()、min()、max()  
+        - 查B-Tree最左端或最右端，EXPLAIN会有“Select tables optimized away”，表示优化器已经从执行计划中移除该表，以一个常数取代
+        - MyISAM维护了count变量
+    - 预估并转化为常数表达式
+        - const  
+        该表最多有一个匹配行, 在查询开始时读取。由于只有一行, 因此该行中**列的值可以被优化器的其余部分视为常量**，被优化器从联接中移除。
+    - 覆盖索引扫描
+    - 提前终止查询
+        - LIMIT
+        - 发现一个不成立的条件
+    - 等值传播
+    两个列的值通过等式连接（join on t1.id=t2.id）,可以把一个列的where条件传递到另一个列上
+    - in()
+    in()中数据先排序，然后通过二分查找确定是否满足条件（O(n)复杂度）。而不是转化为多个OR条件子句
+    - 关联查询  
+    嵌套循环关联、子查询放到临时表
+        - 关联查询优化器
+    - 排序优化  
+        - 不能使用索引时，使用文件排序。group by 除了文件排序还会创建临时表  
+        - innodb_sort_buffer_size  
+            需要排序数据量小于此参数，使用**内存快速排序**。否则会先数据分块，每个块快速排序，将各个块放在磁盘中，最后合并
+        - max_length_for_sort_data：查询中所有需要的列和ORDER BY的列总大小小于此参数或者列中包含BLOB或TEXT，采用single-pass
+            - two-pass:读取行指针和所需排序字段，排序完成之后再读取所需数据行
+                - 优点：排序时存储尽可能少数据，使“排序缓冲区”容纳更多行
+                - 缺点：需两次数据传输，且第二次大量随机IO
+            - single-pass:读取所有列排序。
+                - 优点：无需随机IO
+                - 缺点：占用空间大，可能有更多排序块需要合并
+        - 关联  
+        ![](../picture/db/Mysql/关联orderby.png)
+    - 返回结果  
+    增量逐步返回。例如，处理完最后一个关联表，开始生成第一条结果，就可以向客户端返回结果集。好处是服务端无须存储太多结果降低内存，同时客户端第一时间获得结果
+- 局限性  
+[查询优化器的局限性和提示（hint）](https://blog.csdn.net/zhangzhaoyuan30/article/details/88379826)
+## 14.3 2.3 存储引擎层
+- 存储引擎
+- 物理文件：redolog、undolog、binlog、errorlog、querylog、slowlog、data、index等
 # 15.SQL优化？
 - 关联查询  
     - **确保on或using语句上有第二个表的索引**
     - group by 和order by表达式只涉及一个表中的列，否则不能使用索引
 - group by 和distinct
-    - SQL_SMALL_RESULT  
-    结果集很小，可以将结果集放在内存中的索引临时表避免排序
-    - SQL_BIG_RESULT
-    结果集很大，建议使用磁盘临时表
+    - SQL_SMALL_RESULT：结果集很小，可以将结果集放在内存中的索引临时表避免排序
+    - SQL_BIG_RESULT：结果集很大，建议使用磁盘临时表
 - LIMIT分页
     - 尽可能使用索引覆盖扫描，并根据需要做一次关联操作再返回所需要的列
 - 优化 union
@@ -276,7 +293,7 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
 # 16.剖析sql查询?
 - 慢查询
     - show_query_log=on
-    - log_long_query_time  慢查询阈值
+    - log_long_query_time：慢查询阈值
     - 日志分析工具mysqldumpslow
     - [MySQL慢查询日志总结](https://www.cnblogs.com/saneri/p/6656161.html)
 - show status  
@@ -290,19 +307,16 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
     - id  
     编号，复杂查询select语句顺序编号（子查询从内到外）。
     - select_type
-        - 最外层 PRIMARY
-        - SUBQUERY  
-        SELECT 列表中的子查询
-        - DERIVED  
-        FROM子句中的子查询（会将结果放在临时表）
-        - UNION
-        UNION语句中第二个之后的被标记为UNION
+        - 最外层：PRIMARY
+        - SUBQUERY：SELECT 列表中的子查询
+        - DERIVED：FROM子句中的子查询（会将结果放在临时表）
+        - UNION：UNION语句中第二个之后的被标记为UNION
         - UNION RESULT
     - table  
         - **正在访问的表**
         - 当 FROM子句有子查询时，table列是\<derivedN>，N是子查询Id
-        ![](../picture/Mysql/explain-1.png)  
-        ![](../picture/Mysql/explain-2.png)
+        ![](../picture/db/Mysql/explain-1.png)  
+        ![](../picture/db/Mysql/explain-2.png)
     - **type**
         - ALL  
         全表扫描
@@ -333,7 +347,7 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
         - 通过查找**字段的定义**算出而不是实际数据
         - **前缀模式匹配会显示为完全宽度**
     - ref  
-    显示哪些列或常量与key列中指定的索引进行比较，以从表中选择行显示哪些列或常量与key列中指定的索引进行比较，以从表中选择行
+    显示哪些列或常量与key列中指定的索引进行比较，以从表中选择行
         - Using filesort (JSON property: using_filesort)  
         表示 MySQL 会对结果使用一个外部索引排序，而不是从表里按索引次序读到相关内容。可能在内存或者磁盘上进行排序。**MySQL 中无法利用索引完成的排序操作称为“文件排序”**
         - Using index (JSON property: using_index)  
@@ -347,60 +361,83 @@ where过滤操作放在存储引擎层，Extra可以看到Using index condition
 # 17.MySQL配置优化？
 - 缓冲池和日志文件是必须配置的
     - InnoDB缓冲池
-    ![](../picture/Mysql/InnoDB缓冲池.png)
+    ![](../picture/db/Mysql/InnoDB缓冲池.png)
 # 18.Mysql的几种log？
-- Redo Log  
-物理日志，记录页的物理修改操作
-    - 功能  
-    把随机I/O变为顺序I/O，无须在事务提交时把缓冲池的脏块刷新到磁盘中。
-    - 组成
-        - redo log buffer
-            - 缓冲大小  
-            innodb_log_buffer_size
-            - 刷盘策略innodb_flush_log_at_trx_commit  
-            ![](../picture/Mysql/redo-log刷盘.png)
-        - redo log file
-    - 写入方式
-    环形写入，后台线程刷新到数据文件
-    - 参数配置
-        - innodb_log_file_size
-        - innodb_log_giles_in_group
-        - 权衡  
-        数据变更的开销和崩溃恢复时间
-    - 数据页刷盘
-        - checkpoint
-        checkpoint触发后，会将buffer中脏数据页和脏日志页都刷到磁盘
-            - sharp checkpoint：在重用redo log文件(例如切换日志文件)的时候，将所有已记录到redo log中对应的脏数据刷到磁盘。
-            - fuzzy checkpoint：一次只刷一小部分的日志到磁盘，而非将所有脏日志刷盘。有以下几种情况会触发该检查点：
-                - master thread checkpoint：由master线程控制，**每秒或每10秒**刷入一定比例的脏页到磁盘。
-                - flush_lru_list checkpoint：从MySQL5.6开始可通过 innodb_page_cleaners 变量指定专门负责脏页刷盘的page cleaner线程的个数，该线程的目的是为了保证lru列表有可用的空闲页。
-                - async/sync flush checkpoint：同步刷盘还是异步刷盘。例如还有非常多的脏页没刷到磁盘(非常多是多少，有比例控制)，这时候会选择同步刷到磁盘，但这很少出现；如果脏页不是很多，可以选择异步刷到磁盘，如果脏页很少，可以暂时不刷脏页到磁盘
-                - dirty page too much checkpoint：脏页太多时强制触发检查点，目的是为了保证缓存有足够的空闲空间。too much的比例由变量 innodb_max_dirty_pages_pct 控制，MySQL 5.6默认的值为75，**即当脏页占缓冲池的百分之75**后，就强制刷一部分脏页到磁盘。
-    - LSN
-    日志的逻辑序列号(log sequence number)，表示事务写入redo log的字节总量
-        - 记录
-            - 数据页的版本信息
-            - redo log写入的总量，通过LSN开始号码和结束号码可以计算出写入的日志量
-            - 可知道检查点的位置
-        -  用处
-            - LSN不仅存在于**redo log**中，还存在于**数据页**中
-            - 通过数据页中的LSN值和redo log中的LSN值比较，如果页中的LSN值小于redo log中LSN值，则表示数据丢失了一部分，这时候可以通过redo log的记录来恢复到redo log中记录的LSN值时的状态。
-    - InnoDB恢复
-        - checkpoint表示已经完整刷到磁盘上data page上的LSN，因此恢复时仅需要恢复从checkpoint开始的日志部分
-        - 如果数据页的LSN小于日志中的LSN，则会从检查点开始恢复
-        - 如果数据页中记录的LSN就会大于日志页中的LSN，将不会重做
-- undo log  
+## 18.1 Redo Log  
+物理日志，记录页的物理修改操作。数据库系统普遍采用Write Ahead Log，当事务提交时，先写重做日志，再修改页
+- 功能  
+把随机I/O变为顺序I/O，无须在事务提交时把缓冲池的脏块刷新到磁盘中。
+- 组成
+    - redo log buffer
+        - 缓冲大小：innodb_log_buffer_size
+        - 刷盘策略：innodb_flush_log_at_trx_commit（默认1）
+            ![](../picture/db/Mysql/redo-log刷盘.png)
+    - redo log file
+- 写入方式：环形写入，后台线程刷新到数据文件
+- 参数配置
+    - innodb_log_file_size
+    - innodb_log_giles_in_group
+    - 权衡：数据变更的开销和崩溃恢复时间
+- 数据页刷盘
+    - checkpoint：checkpoint触发后，会将buffer中脏数据页刷到磁盘。
+        - 作用：
+            1. 缩短数据库恢复时间
+            2. 缓冲池不够用时，将脏页刷到磁盘
+            3. 重做日志不可用时，刷新脏页
+        - sharp checkpoint：在数据库关闭时，将所有已记录到redo log中对应的脏数据刷到磁盘。
+        - fuzzy checkpoint：一次只刷一小部分脏页到磁盘。有以下几种情况会触发该检查点：
+            - master thread checkpoint：由master线程控制，**每秒或每10秒**刷入一定比例的脏页到磁盘。
+            - flush_lru_list checkpoint：从MySQL5.6开始可通过 innodb_page_cleaners 变量指定专门负责脏页刷盘的page cleaner线程的个数，该线程的目的是为了保证lru列表有可用的空闲页。
+            - async/sync flush checkpoint：重做日志不可用时
+            - dirty page too much checkpoint：脏页太多时强制触发检查点，目的是为了保证缓存有足够的空闲空间。too much的比例由变量 innodb_max_dirty_pages_pct 控制，MySQL 5.6默认的值为75，**即当脏页占缓冲池的百分之75**后，就强制刷一部分脏页到磁盘。
+- LSN
+日志的逻辑序列号(log sequence number)，表示事务写入redo log的字节总量。
+    - 记录
+        - 数据页的版本信息
+        - redo log写入的总量，通过LSN开始号码和结束号码可以计算出写入的日志量
+        - 可知道检查点的位置
+    -  用处
+        - LSN不仅存在于**redo log**中，还存在于**数据页**中。每个页的LSN记录最后一次修改的LSN
+        - 通过数据页中的LSN值和redo log中的LSN值比较，如果页中的LSN值小于redo log中LSN值，则表示数据丢失了一部分，这时候可以通过redo log的记录来恢复到redo log中记录的LSN值时的状态。
+- InnoDB恢复
+    - checkpoint表示已经完整刷到磁盘上data page上的LSN，因此恢复时仅需要恢复从checkpoint开始的日志部分
+    - 如果数据页的LSN小于日志中的LSN，则会从检查点开始恢复
+    - 如果数据页中记录的LSN大于日志页中的LSN，将不会重做
+## 18.2 undo log  
 逻辑日志，根据每行记录进行记录，需要随机读写
-    - 作用
-        - 回滚
-        - MVCC
-    - 存在undo 段，位于共享表空间
-        - insert undo log  
-        insert操作只对事务本身可见，对其他事物不可见，故**insert undo log**可在提交后直接删除。**todo**
-        - update undo log  
-        需要提供MVCC机制，需要等待该行记录不被任何事务引用时，**purge**线程删除
-- binlog
-POINT-IN-TIME恢复和主从复制环境的建立
-    - 和redo log区别
-        - bin log服务器层产生，redo log innoDB产生
-        - redo log记录每个页的修改，它具有**幂等性**；bin log是逻辑日志，记录SQL语句
+- 作用
+    - 回滚
+    - MVCC
+- 存在undo 段，位于共享表空间
+    - insert undo log  
+    insert的记录之前并不存在，所以其他事物看不见历史版本，故**insert undo log**可在提交后直接删除。**todo**
+    - update undo log  
+    需要提供MVCC机制，需要等待该行记录不被任何事务引用时，**purge**线程删除
+## 18.3 binlog
+POINT-IN-TIME恢复和主从复制环境的建立，逻辑日志，记录sql（不包含select）
+- 和redo log区别
+    - bin log服务器层产生，redo log innoDB产生
+    - redo log记录每个页的修改，它具有**幂等性**；bin log是逻辑日志，记录SQL语句
+- sync_binlog（默认1）
+    - 0：写入缓冲不刷盘
+    - 1：同步刷盘
+    - N：每N次操作系统缓冲执行一次刷新
+# 19 Mysql数据写入过程
+1. 首先 insert 进入 server 层后，会进行一些必要的**检查**
+2. 修改 buffer pool 当中对应的数据页
+4. 写入redo log
+5. 如果开启了 binlog，我们还需将事务逻辑数据写入 binlog 
+## 19.1 双写是什么？
+数据库真正修改一个page会有以下的流程：
+1. 把一个page从持久层读出来放到内存中
+2. 在内存中把这个page修改掉
+3. 把这个内存中的page刷回持久层的原来的位置。
+
+数据页的大小是16K，操作系统页4k，会出现partial-write。
+
+而partial-write如果出现在第三步，这个操作就把原来的page的内容也写坏了，新的page的内容也没写进入。此时redo log也无法恢复，因为**没有存此页原来的数据**。
+
+双写过程：
+1. 数据缓冲池中的脏页刷新时，并不直接写入磁盘数据文件中，而是先拷贝至内存中的doublewrite buffer中
+2. 接着从两次写缓冲区分两次写入磁盘共享表空间中(顺序写)，每次写1MB
+3. 待第二步完成后，再将doublewrite buffer中的脏页数据写入实际的各个表空间文件(离散写)；(脏页数据固化后，即进行标记对应doublewrite数据可覆盖)

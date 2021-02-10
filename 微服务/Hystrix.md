@@ -9,6 +9,7 @@
 - [7降级注意事项？](#7降级注意事项)
 - [8线程池隔离维度，几个key的含义？](#8线程池隔离维度几个key的含义)
 - [9Sentinel？](#9sentinel)
+- [10 配置](#10-配置)
 
 <!-- /TOC -->
 
@@ -16,12 +17,12 @@
 # 1功能?
 - 熔断器（Circuit Breaker）
 - 隔离（Isolation），实现了**线程池隔离**和**信号量隔离**
-- 回退（fallback），Hystrix会在run()执行过程中出现错误、超时、线程池拒绝、断路器熔断等情况时进行降级处理，有default fallback、单级fallback、多级fallback。
+- 降级（fallback），Hystrix会在run()执行过程中出现错误、超时、线程池拒绝、断路器熔断等情况时进行降级处理，有default fallback、单级fallback、多级fallback。
 - 请求合并（Request Collapsing）
 - 请求缓存（Request Caching）
 - 仪表盘
 # 2为什么要做线程隔离？
-- 分布式系统环境下，服务间类似依赖非常常见，一个业务调用通常依赖多个基础服务。对于同步调用，当上游服务不可用时，下游服务**请求线程被阻塞**，当有大批量请求调用下游服务时，最终可能导致整个下游服务**资源耗尽**，无法继续对外提供服务。并且这种不可用可能**沿请求调用链向下游传递**，这种现象被称为雪崩效应。
+- 分布式系统环境下，服务间类似依赖非常常见，一个业务调用通常依赖多个基础服务。对于同步调用，当下游服务不可用时，上游服务**请求线程被阻塞**，当有大批量请求调用上游服务时，最终可能导致整个上游服务**资源耗尽**，无法继续对外提供服务。并且这种不可用可能**沿请求调用链向上游传递**，这种现象被称为雪崩效应。
 - **执行依赖代码的线程与请求线程(比如Tomcat线程)分离**，请求线程可以自由控制离开的时间，这也是我们通常说的异步编程，Hystrix是结合RxJava来实现的异步编程。通过设置线程池大小来控制并发访问量，当线程饱和的时候可以拒绝服务，防止依赖问题扩散。
 # 3HystrixCommand vs HystrixObservableCommand
 [Hystrix使用入门手册](https://www.jianshu.com/p/b9af028efebb)
@@ -95,3 +96,6 @@ public Command() {
 ```
 # 9Sentinel？
 https://sentinelguard.io/zh-cn/docs/introduction.html
+
+# 10 配置
+[Hystrix 配置内容](https://wiki.n.miui.com/pages/viewpage.action?pageId=34969752)

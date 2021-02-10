@@ -18,6 +18,7 @@
 - [8在公司的使用](#8在公司的使用)
     - [8.1 服务端](#81-服务端)
     - [8.2 客户端](#82-客户端)
+    - [8.3 对象池](#83-对象池)
 
 <!-- /TOC -->
 # 1Thrift架构
@@ -30,12 +31,13 @@
 ---
 IDL生成
 - 处理层(Processor Layer)：处理层是由具体的IDL生成的，封装了具体的底层网络传输和序列化方式，并委托给用户实现的Handler进行处理
-    - IDL生成对象的序列化和反序列化write/read方法，read()负责根据协议从字节流中解析调用的函数名，参数等，比如方法HelloService.helloString_args#read,write()则相反  
+    - IDL生成对象的序列化和反序列化write/read方法，read()负责根据协议从字节流中解析调用的**函数名，参数**等，比如方法HelloService.helloString_args#read,write()则相反  
     - Cilent：编码，通过网络发送；接收返回结果，解码
     - Processor：封装了从输入流读取数据和向输出流写入数据的能力。输入和输出流由TProtocol对象表示。  
     本质上从网络读取数据(使用输入协议)，将处理委托给处理程序(由用户实现)，并通过网络写入响应(使用输出协议)
+    - Clinet和Processor 编解码对应
 ---
-- 服务层(Server Layer)：整合上述组件：
+- 服务层(Server Layer)：整合上述组件（**组合**）：
     - 创建transport
     - 为transport创建input/output protocols 
     - 基于protocols 创建processor 
@@ -211,7 +213,7 @@ IDL生成生成的客户端写参数的方法和服务端读参数的方法一�
 - TThreadSelectorServer  
 多Reactor多线程：
     - 采用了一个**AcceptorThread**来Accept，将SocketChannel放到**SelectorThread**的阻塞队列**acceptedQueue**中
-    - 每个SelectorThread绑定一个Selector，循从acceptedQueue中拿新创建好的SocketChannel，来处理读写事件和方法调用
+    - 每个SelectorThread绑定一个Selector，从acceptedQueue中拿新创建好的SocketChannel，注册到selector中，后续再处理读写事件和方法调用（可以在SelectorThread本线程中，也可以在线程池中）
 ## 6.3FrameBuffer
 - 通过SelectionKey.attachment()与key绑定，并将key作为成员变量
 - 维护了一个FrameBufferState表示读写和方法调用的状态，并且根据此状态修改SelectionKey的读写状态
@@ -264,12 +266,12 @@ IDL生成生成的客户端写参数的方法和服务端读参数的方法一�
 - 每个服务有一个client 对象池
     - 第一次调用时，会创建一个EndpointPool：获取ZK上该服务的所有节点的endpoint信息（node, host, port, weight, startTime, version, group, partitionGroup），生成EndpointPool。
         - 注册pool节点和子节点的监听
-        - 并定时拉取pool节点防止ZK通知丢失
+        - 并定时拉取pool节点**防止ZK通知丢失**
     - 每次调用会根据endpoint从对象池中borrowObject（如果没有创建）
     - 负载均衡
-        - random
+        - round-robin
         - least active算法：
-            - 解决random算法的问题：下游一台机器出问题，因为到这台机器上的请求量并不会少，最终就是pool中的所有连接都会被这台机器抢占的问题
+            - 解决round-robin算法的问题：下游一台机器出问题，因为到这台机器上的请求量并不会少，最终就是pool中的所有连接都会被这台机器抢占的问题
             - 记录每个Endpoint的实时请求数(使用PerfCounter.count，底层使用AtomicLong，请求开始+1，结束-1)
             - 找到实时请求数最小的Endpoint
             - 如果实时请求数相等根据权重取一个
@@ -320,3 +322,16 @@ IDL生成生成的客户端写参数的方法和服务端读参数的方法一�
             ```
     - 慢启动预热JVM
 - 每一次调用都会通过被套上一个HystrixCommand
+## 8.3 对象池
+GenericKeyedObjectPool
+```java
+this.pool = new GenericKeyedObjectPool(this.clientfactory);
+this.pool.setMaxActive(ClientConfigs.getMaxActiveThriftConnection());// 设置每个键由池管理的对象实例数的上限 100 
+this.pool.setMaxIdle(MAX_IDLE_CLIENT);// 在给定key的池中保留的“空闲”实例的最大数量 20
+this.pool.setTestOnBorrow(true);// 设置为true ，将在对象由borrowObject方法返回之前进行validated 。 如果对象验证失败，它将被从池中删除，并会尝试借用另一个对象
+this.pool.setMaxWait(ClientConfigs.getMaxWaitTime());// 如果耗尽策略是阻塞，设置阻塞时间 10ms
+this.pool.setTestWhileIdle(true);// 对象会被 idle object evictor 验证，验证失败会被清除出池
+this.pool.setMinEvictableIdleTimeMillis(MIN_EVICTABLE_IDLE_TIME_MILLIS);// 对象被驱逐前的最短空闲时间
+this.pool.setTimeBetweenEvictionRunsMillis(TIME_BETWEEN_EVICTION_MILLIS);// 驱逐器运行间隔时间3ms
+this.pool.setWhenExhaustedAction(GenericKeyedObjectPool.WHEN_EXHAUSTED_FAIL);
+```
