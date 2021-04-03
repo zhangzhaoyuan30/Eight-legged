@@ -1,4 +1,50 @@
 
+<!-- TOC -->
+
+- [1 特性](#1-特性)
+- [2 基本概念](#2-基本概念)
+    - [2.1 Parallel](#21-parallel)
+    - [2.2 两类进程](#22-两类进程)
+- [3 window](#3-window)
+    - [3.1 分类](#31-分类)
+    - [3.2 组件](#32-组件)
+    - [3.3 watermark](#33-watermark)
+    - [3.3 窗口应用函数](#33-窗口应用函数)
+    - [3.4 晚到事件](#34-晚到事件)
+- [4 time](#4-time)
+    - [4.1 Processing Time](#41-processing-time)
+    - [4.2 Event Time](#42-event-time)
+    - [4.3 Ingestion Time](#43-ingestion-time)
+- [5 DataStram API](#5-datastram-api)
+    - [5.1 物理分组](#51-物理分组)
+    - [5.2 TypeInformation](#52-typeinformation)
+- [6 State](#6-state)
+    - [6.1 应用](#61-应用)
+    - [6.2 分类](#62-分类)
+- [7 Checkpoint 和 Savepoint](#7-checkpoint-和-savepoint)
+    - [7.1 概念](#71-概念)
+    - [7.2 存储](#72-存储)
+    - [7.3 exactly-once原理](#73-exactly-once原理)
+        - [7.3.1 内部](#731-内部)
+        - [7.3.2 端到端](#732-端到端)
+- [8 Flink Runtime](#8-flink-runtime)
+    - [8.1 总体](#81-总体)
+    - [8.2 JobManager](#82-jobmanager)
+    - [8.2 TaskManager](#82-taskmanager)
+    - [8.3 集群](#83-集群)
+- [9 Join](#9-join)
+    - [9.1 内连接](#91-内连接)
+    - [9.1.1 Window Join](#911-window-join)
+    - [9.1.2 Interval Join](#912-interval-join)
+    - [9.3 coGroup](#93-cogroup)
+- [10 反压机制](#10-反压机制)
+    - [10.1 Rate Limiter 静态限流](#101-rate-limiter-静态限流)
+    - [10.2 动态反馈](#102-动态反馈)
+    - [10.3 Flink](#103-flink)
+- [11 内存设置](#11-内存设置)
+- [12 作业优化](#12-作业优化)
+
+<!-- /TOC -->
 # 1 特性
 - 有状态计算的**Exactly-once**语义。
 - 支持高度灵活的窗口（**window**）操作。支持基于time、count、session，以及data-driven的窗口操作，能很好的对现实环境中的创建的数据进行建模。
@@ -14,7 +60,7 @@
 Partition），一个Operator的并行度等于Operator Subtask的个数，**一个Stream的并行度总是等于生成它的Operator的并行度**
 - **Operator Chain**：多个Operator 串起来组成一个Operator Chain，作为一个task ，会在TaskManager上**一个独立的线程Task slot**中执行
 ## 2.2 两类进程
-- JobManager（又称为 JobMaster）：协调 Task 的分布式执行，包括调度 Task、协调创 Checkpoint 以及当 Job failover 时协调各个 Task 从 Checkpoint 恢复等。
+- JobManager（又称为 JobMaster）：协调 Task 的分布式执行，包括调度 Task、协调创建 Checkpoint 以及当 Job failover 时协调各个 Task 从 Checkpoint 恢复等。
 - TaskManager（又称为 Worker）：执行 Dataflow 中的 Tasks，包括内存 Buffer 的分配、Data Stream 的传递等。
     - Task Slot 是一个 TaskManager 中的最小资源分配单位，一个 TaskManager 中有多少个 Task Slot 就意味着能支持多少并发的 Task 处理。需要注意的是，**一个 Task Slot 中可以执行多个 Operator，一般这些 Operator 是能被 Chain 在一起处理的**
 # 3 window
