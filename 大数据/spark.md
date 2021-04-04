@@ -1,7 +1,3 @@
-内存
-
-[Spark学习之路](https://www.cnblogs.com/qingyunzong/category/1202252.html?page=1)
-
 <!-- TOC -->
 
 - [1 RDD](#1-rdd)
@@ -42,6 +38,9 @@
 - [9 Spark分区](#9-spark分区)
 
 <!-- /TOC -->
+
+[Spark学习之路](https://www.cnblogs.com/qingyunzong/category/1202252.html?page=1)
+
 # 1 RDD
 RDD（Resilient Distributed Dataset）叫做弹性分布式数据集，是Spark中**最基本的数据抽象**，它代表一个**不可变、可分区、里面的元素可并行计算**的集合。RDD具有数据流模型的特点：自动容错、位置感知性调度和可伸缩性。RDD允许用户在执行多个查询时显式地将工作集缓存在内存中，后续的查询能够重用工作集，这极大地提升了查询速度。
 ## 1.1 RDD的属性
@@ -138,10 +137,10 @@ Executor的 CPU core 执行的第一个task创建一个shuffleFileGroup，下一
     - 最后会将之前所有的临时磁盘文件都进行合并，这就是merge过程。  
     - 由于一个task就只对应一个磁盘文件，也就意味着该task为下游stage的task准备的数据都在这一个文件中，因此还会单独写一份**索引**文件，其中标识了**下游各个task的数据在文件中的start offset与end offset**
 2. bypass（不排序）
-- 触发条件
-    - shuffle map task数量小于spark.shuffle.sort.bypassMergeThreshold参数的值
-    - 不是聚合类的shuffle算子（比如reduceByKey）
-- 和未经优化的HashShuffleManager相比多了一步merge和创建索引
+    - 触发条件
+        - shuffle map task数量小于spark.shuffle.sort.bypassMergeThreshold参数的值
+        - 不是聚合类的shuffle算子（比如reduceByKey）
+    - 和未经优化的HashShuffleManager相比多了一步merge和创建索引
 
 ## 6.3 参数调优
 - spark.shuffle.file.buffer：shuffle write task的BufferedOutputStream的buffer缓冲大小，**默认32k**
