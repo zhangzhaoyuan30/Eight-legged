@@ -8,6 +8,9 @@
 - [3Redis Pipeline和Redis事务？](#3redis-pipeline和redis事务)
     - [3.1 Redis Pipeline](#31-redis-pipeline)
     - [3.2 Redis事务？](#32-redis事务)
+    - [3.2.1 发生错误：](#321-发生错误)
+    - [3.2.2 Watch（乐观锁）](#322-watch乐观锁)
+    - [3.3 Lua脚本](#33-lua脚本)
 - [4其他功能](#4其他功能)
 - [5RDB和AOF](#5rdb和aof)
     - [5.1 RDB](#51-rdb)
@@ -74,9 +77,43 @@
 代表事务开始
 - exec
 代表事务结束
-- watch
+- DISCARD：放弃事务
+- watch,UNWATCH
 确保事务中的key没被其他客户端修改过，才执行，否则不执行（乐观锁）
 - 不支持回滚，需要自己处理
+
+```shell
+>MULTI
+OK
+>INCR foo
+QUEUED
+>INCR bar
+QUEUED
+>EXEC
+1）（整数）1
+2）（整数）1
+```
+使用MULTI命令显式开启Redis事务。 该命令总是以OK回应。此时用户可以发出多个命令，Redis不会执行这些命令，而是**将它们排队**。EXEC被调用后，所有的命令都会被执行。而调用**DISCARD可以清除事务中的commands队列**并退出事务。
+从上面的命令执行中可以看出，EXEC返回一个数组，其中每个元素都是事务中单个命令的返回结果，而且顺序与命令的发出顺序相同。
+## 3.2.1 发生错误：
+- 在调用EXEC命令之前出现错误（COMMAND排队失败）（比如语法错误）
+    ```shell
+    >MULTI
+    +OK
+    >INCR a b c
+    -ERR wrong number of arguments for 'incr' command
+    ```
+    从Redis 2.6.5开始，服务端会记住在累积命令期间发生的错误，当EXEC命令调用时，将拒绝执行事务，并返回这些错误，同时自动清除命令队列
+- 在调用EXEC命令之后出现错误：（比如使用错误的值对某个key执行操作）  
+即使事务中的某些命令执行失败，其他命令仍会被正常执行
+- 不支持回滚：性能，错误命令生产环境不应该存在
+## 3.2.2 Watch（乐观锁）
+被 WATCH 的键会被监视，并会发觉这些键是否被改动过了。 如果有**至少一个**被监视的键在 EXEC 执行之前被修改了， 那么**整个事务都会被取消**， EXEC 返回空多条批量回复（null multi-bulk reply）来表示事务已经失败
+## 3.3 Lua脚本
+原子性
+- SCRIPT LOAD script
+- SCRIPT FLUSH
+- EVALSHA
 # 4其他功能
 - Bitmaps  
 实际是字符串结构
@@ -179,6 +216,7 @@
 ![分布式之数据库和缓存双写一致性方案解析](../picture/db/Redis/15-缓存更新.png)
 ## 11.2 缓存更新一致性问题
 [](https://www.cnblogs.com/rjzheng/p/9041659.html)
+https://zhuanlan.zhihu.com/p/48334686
 - 先更新缓存，后更新db：如果DB更新失败导致缓存中的数据是错误的，不能容忍
 - 先更新DB，后更新缓存：
     - ABBA导致脏数据
