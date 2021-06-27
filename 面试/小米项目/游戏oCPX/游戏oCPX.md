@@ -73,7 +73,7 @@ https://wiki.n.miui.com/pages/viewpage.action?pageId=284448719
 
 
 # 1 广告系统架构
-![](../picture/简历/3-广告系统架构.png)
+![](./picture/3-广告系统架构.png)
 - SDK是干啥的？
 - 打点线
 - 
@@ -84,7 +84,7 @@ https://wiki.n.miui.com/pages/viewpage.action?pageId=284448719
 - DMP：Data Management Platform：用户画像。DSP在做广告投放的时候，需要用数据来优化投放效果，数据有些自己的，**也可以从DMP获取**。最简单的方式就是DMP对于每一个设备打上标签，DSP在获取从AdExchange来的广告展示请求的时候，同时获取了设备信息和DMP的标签信息，然后通过自己的算法模型来决定出价。
 ## 1.2 DE设计
 ### 1.2.1 请求生命周期
-![](../picture/简历/5-生命周期.png)
+![](./picture/5-生命周期.png)
 
 都采用策略模式：
 ```java
@@ -130,7 +130,7 @@ Map<MediaType, BaseReshaper> mediaType2ReshaperMap = new HashMap<>();
 
     ```
 ### 1.2.3 SupplyControl
-![](../picture/简历/4-supply.png)
+![](./picture/4-supply.png)
 ## 1.3 GameOcpa
 ### 1.3.1 @Conditional
 ```java
@@ -172,9 +172,9 @@ eCPM：effective cost per mile
 [经典的自动控制算法 PID](http://www.woshipm.com/pd/4206858.html)
 用空调举例
 - 公式：
-    ![](../picture/简历/1-pid.png)
+    ![](./picture/1-pid.png)
 - 离散形式：
-    ![](../picture/简历/2-pid.png)
+    ![](./picture/2-pid.png)
 - 小米
     - P(t) = (targetCpa - realCpa) / targetCpa
     - PID(t) = kp * P(t) + ki * I(t) + kd * D(t) 

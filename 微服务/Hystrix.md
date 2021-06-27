@@ -99,3 +99,9 @@ https://sentinelguard.io/zh-cn/docs/introduction.html
 
 # 10 配置
 [Hystrix 配置内容](https://wiki.n.miui.com/pages/viewpage.action?pageId=34969752)
+- 熔断触发的异常率：30%
+- 熔断打开后，重试操作的间隔时间：5s
+- 执行的超时时间：250ms
+- 熔断统计桶个数：10
+- 线程池大小
+- 队列

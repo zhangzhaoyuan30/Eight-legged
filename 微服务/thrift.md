@@ -19,6 +19,7 @@
     - [8.1 服务端](#81-服务端)
     - [8.2 客户端](#82-客户端)
     - [8.3 对象池](#83-对象池)
+- [9 服务治理](#9-服务治理)
 
 <!-- /TOC -->
 # 1Thrift架构
@@ -263,8 +264,8 @@ IDL生成生成的客户端写参数的方法和服务端读参数的方法一�
         - 删除临时节点
 ## 8.2 客户端
 [Thrift RPC优化](https://wiki.n.miui.com/pages/viewpage.action?pageId=31638391)  
-- 每个服务有一个client 对象池
-    - 第一次调用时，会创建一个EndpointPool：获取ZK上该服务的所有节点的endpoint信息（node, host, port, weight, startTime, version, group, partitionGroup），生成EndpointPool。
+- 每个服务有一个 client 对象池
+    - 初始化时，会创建一个EndpointPool：获取ZK上该服务的所有节点的endpoint信息（node, host, port, weight, startTime, version, group, partitionGroup），生成EndpointPool。
         - 注册pool节点和子节点的监听
         - 并定时拉取pool节点**防止ZK通知丢失**
     - 每次调用会根据endpoint从对象池中borrowObject（如果没有创建）
@@ -335,3 +336,18 @@ this.pool.setMinEvictableIdleTimeMillis(MIN_EVICTABLE_IDLE_TIME_MILLIS);// 对�
 this.pool.setTimeBetweenEvictionRunsMillis(TIME_BETWEEN_EVICTION_MILLIS);// 驱逐器运行间隔时间3ms
 this.pool.setWhenExhaustedAction(GenericKeyedObjectPool.WHEN_EXHAUSTED_FAIL);
 ```
+
+# 9 服务治理
+1. 调度策略
+    - 默认策略是当下游节点出问题（请求超时），会继续遍历下游其它节点直至找到一个可用节点，所以在下游异常的情况下会导致请求处理时间暴涨，最终导致服务雪崩。
+    - 解决方案：增加fail-fast机制，禁止遍历调用。
+2. 连接池无可用连接处理策略
+    - 默认是等待，并且这个操作是一个synchronize的操作，会导致后续线程都在这里排队，造成服务不可用。
+    - 解决问题：更改连接池等待模式，改为fail-fast, 当连接池满的时候直接返回。
+3. 依赖共享同一个连接池。
+    - 初始版本单进程只支持一个共享连接池，当服务有多个下游依赖的时候，一旦其中一个服务出问题，会导致这个服务占用所有连接池资源，影响请求正常处理。
+    - 解决方案：支持依赖隔离，不同依赖使用不同连接池。
+4. 负载策略。
+    - 默认使用的负载策略是round-robin, 这种情况下一旦下游一台机器出问题，因为到这台机器上的请求量并不会少，最终就是pool中的所有连接都会被这台机器抢占，影响请求处理。
+    - 解决方案：开启least active算法，动态负载均衡，zk服务注册路径的pool节点配置：partition.servergroups.algorithm=active
+    - 上述解决方案会导致：下游一台服务节点CPU打满，误认为这台机器负载低，处理能力强（实际上是这台机器连接都建立不了，请求过不去。增加heatbeat，对下游服务节点健康状态进行定时检查，一旦发现不可用，不再向这台机器发送请求。

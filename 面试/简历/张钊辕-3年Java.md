@@ -1,23 +1,25 @@
 # 个人信息
-- 张钊辕/男/1996<img style="float:right" src="../picture/简历/6-照片.jpeg" width = "100" height = "128"/>
+- 张钊辕/男/1996<img style="float:right" src="./picture/1-照片.jpeg" width = "100" height = "128"/>
 - 工作年限：3年
 - 期望职位：Java后台开发
 - 手机/微信：15600603715
 - Email：zhangzhaoyuan123@foxmail.com
 
 # 教育经历
-2014.9-2018.7&emsp;&emsp;&emsp;&emsp;本科&emsp;&emsp;&emsp;&emsp;哈尔滨工业大学&emsp;&emsp;&emsp;&emsp;土木工程
+- 2014.9-2018.7&emsp;&emsp;&emsp;&emsp;本科&emsp;&emsp;&emsp;&emsp;哈尔滨工业大学&emsp;&emsp;&emsp;&emsp;土木工程
 
 # 技术栈
-- 熟悉：Java/Spring/SpringBoot/Mysql/Redis/Zookeeper/Thrift/Kafka
-- 了解：Spark/Flink
+- Java基础扎实，熟悉集合、并发，了解 JVM 原理
+- 熟悉 Spring/SpringBoot 开发，了解其实现原理
+- 熟悉 Mysql/Redis 存储
+- 熟悉 Kafka，了解其使用场景和原理
+- 熟悉 Thrift，了解RPC原理、服务发现、服务治理技术
+- 熟悉 Zookeeper，了解Paxos 协议、ZAB 协议
+- 有 Spark/Flink/Druid 等大数据处理经验
 
 # 工作经历
-2019.8-2021.4&emsp;&emsp;&emsp;&emsp;小米商业平台部&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Java工程师
-
-2019.8-2019.8&emsp;&emsp;&emsp;&emsp;跟谁学高途课堂&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Java工程师
-
-2018.7-2019.8&emsp;&emsp;&emsp;&emsp;北京数码视讯&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Java工程师
+- 2019.8至今&emsp; &emsp;&emsp;&emsp;&emsp;小米商业平台部&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Java工程师
+- 2018.7-2019.8&emsp;&emsp;&emsp;&emsp;北京数码视讯&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Java工程师
 
 # 项目经历
 ##  oCPX 广告投放系统开发

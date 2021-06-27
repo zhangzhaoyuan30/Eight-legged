@@ -27,7 +27,8 @@
     - [5.2 代理](#52-代理)
     - [5.3 AOP基本概念](#53-aop基本概念)
     - [5.4 使用](#54-使用)
-    - [5.5 原理](#55-原理)
+    - [5.5 Proceedingjoinpoint和Joinpoint](#55-proceedingjoinpoint和joinpoint)
+    - [5.6 原理](#56-原理)
 - [6 @Autowired @Resource @Qualifier区别](#6-autowired-resource-qualifier区别)
 - [7 Spring MVC？](#7-spring-mvc)
     - [7.1 MVC模式](#71-mvc模式)
@@ -62,6 +63,7 @@
 |websocket(Web)|在WebSocket的完整生命周期中，将创建并使用单个实例。 |
 # 3 事务属性
 ## 3.1 事务传播行为？
+[事务传播行为](https://www.cnblogs.com/YuyuanNo1/p/11400638.html)
 ### 3.1.1 支持当前事务的情况
 - TransactionDefinition.PROPAGATION_REQUIRED： 如果当前存在事务，则加入该事务；如果当前没有事务，则创建一个新的事务。
 - PROPAGATION_SUPPORTS： 如果当前存在事务，则加入该事务；如果当前没有事务，则以非事务的方式继续运行。
@@ -259,7 +261,7 @@ Resource定位指的是BeanDefinition的资源定位，它由ResourceLoader通�
    - 当要销毁 Bean 的时候，如果 Bean 实现了 DisposableBean 接口，执行 destroy() 方法。
    - 当要销毁 Bean 的时候，如果 @Bean 包含 destroy-method 属性，执行指定的方法。
 ### 4.4.1 销毁Bean
-- 在Spring装载上下文，解析bean配置的时候，就会生成对应的disposableBeans数据。一个具体的**bean在创建完成后**，会在AbstractAutowireCapableBeanFactory的registerDisposableBeanIfNecessary中判断当前bean是否需要放入到disposableBeans中
+- 在doCreateBean() 中调用 registerDisposableBeanIfNecessary() 判断当前bean是否需要放入到disposableBeans中
 - 判断条件除了上述两种还有下文将提到的@preDestroy，还有实现了AutoCloseable也可以。共四种
 - Spring目前是先加载的bean后销毁
 ### 4.4.1 Spring如何解决循环依赖？
@@ -342,7 +344,16 @@ public class StopWatchAdvice {
 }
 
 ```
-## 5.5 原理
+## 5.5 Proceedingjoinpoint和Joinpoint
+- Joinpoint
+   - java.lang.Object[] getArgs()：获取连接点方法运行时的入参列表； 
+   - Signature getSignature() ：获取连接点的方法签名对象； 
+   - java.lang.Object getTarget() ：获取连接点所在的目标对象； 
+   - java.lang.Object getThis() ：获取代理对象本身； 
+- Proceedingjoinpoint
+   - java.lang.Object proceed() throws java.lang.Throwable：通过反射执行目标对象的连接点处的方法； 
+   - java.lang.Object proceed(java.lang.Object[] args) throws java.lang.Throwable：通过反射执行目标对象连接点处的方法，不过使用新的入参替换原来的入参。 
+## 5.6 原理
 [spring源码剖析（六）AOP实现原理剖析](https://blog.csdn.net/fighterandknight/article/details/51209822)  
 [Spring AOP 源码分析系列文章导读](http://www.tianxiaobo.com/2018/06/17/Spring-AOP-%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E7%B3%BB%E5%88%97%E6%96%87%E7%AB%A0%E5%AF%BC%E8%AF%BB/)
 ![](../picture/Java/Spring/6-AOP-1.png)
@@ -509,4 +520,4 @@ default void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, 
 - 而RequestMappingHandlerMapping实现了InitializingBean接口，因此在初始化并装配该Bean实例时，便会执行他的afterPropertySet方法，注册handler
 
 # 13 构造注入和属性注入？
-通过ConstructorResolver#resolveAutowiredArgument解析构造器的参数，解析的含义是：根据构造器参数类型从IoC中找到(或者生成)对应的实例。该类本身并不具备解析依赖的能力，本质上还是依靠AutowireCapableBeanFactory#resolveDependency来进行依赖的解析。此处有一点需要注意的是，AutowireCapableBeanFactory#resolveDependency的第一个入参是new DependencyDescriptor(param, true)，其中的'true'代表的含义是：**该依赖项是强依赖，即required，如果找不到，会抛出NoSuchBeanDefinitionException**。这也是Spring4以后官方推荐使用构造器注入的原因之一: 表明强依赖强系
+通过ConstructorResolver#resolveAutowiredArgument解析构造器的参数，解析的含义是：根据构造器参数类型从IoC中找到(或者生成)对应的实例。该类本身并不具备解析依赖的能力，本质上还是依靠AutowireCapableBeanFactory#resolveDependency来进行依赖的解析。此处有一点需要注意的是，AutowireCapableBeanFactory#resolveDependency的第一个入参是new DependencyDescriptor(param, true)，其中的'true'代表的含义是：**该依赖项是强依赖，即required，如果找不到，会抛出NoSuchBeanDefinitionException**。这也是Spring4以后官方推荐使用构造器注入的原因之一：表明强依赖

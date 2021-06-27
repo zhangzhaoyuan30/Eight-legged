@@ -30,7 +30,11 @@
     - [6.1 控制器的选举](#61-控制器的选举)
     - [6.2 功能](#62-功能)
 - [7 消费者分区分配？](#7-消费者分区分配)
-- [8 消费者协调器和组协调器](#8-消费者协调器和组协调器)
+- [8 Rebalance](#8-rebalance)
+    - [8.1 FIND_COORDINATOR](#81-find_coordinator)
+    - [8.2 JOIN_GROUP](#82-join_group)
+    - [8.3 SYNC_GROUP](#83-sync_group)
+    - [8.4 HEARTBEAT(避免不必要的rebalance)](#84-heartbeat避免不必要的rebalance)
 - [9 **消息交付语义**](#9-消息交付语义)
     - [9.1 生产者](#91-生产者)
         - [9.1.1 幂等实现原理](#911-幂等实现原理)
@@ -213,7 +217,7 @@ KafkaConsumer 非线程安全，实现原理是每个方法调用前执行acquir
     - 对于大量使用页缓存的Kafka，应该**避免swap**，**vm.swappiness=1**(0表示关闭，最大100。设为1保留了swap 的机制而又最大限度地限制了它对Kafka 性能的影响)
         - >swap是把非活跃进程交换出内存
 ## 5.2 零拷贝
-见[零拷贝](../Java/IO.md#\t4\t零拷贝技术)
+见[零拷贝](../Java/IO.md#/t4/t零拷贝技术)
 ## 5.3 **Kafka吞吐量总结**？
 - 分区：Partition 置于不同的磁盘上，从而实现磁盘间的并行处理，充分发挥多磁盘的优势
 - pagecache
@@ -228,15 +232,51 @@ zk中创建/controllers节点
 - 监听主题相关的变化
 - 监听broker 相关的变化
 # 7 消费者分区分配？
-- RangeAssigner（默认）：消费者按照名称的字典序排序， 然后为每个消费者划分固定的分区范围，如果不够平均分配，那么字典序靠前的消费者会被多分配一个分区  
-    - 消费者C0 : t0p0 、t0p1、t1p0 、t1p1
-    - 消费者C1 : t0p2、t1p2
+- RangeAssigner（默认）：消费者总数和分区总数进行整除运算获得一个跨度，然后将分区按照跨度进行平均分配
+    - 消费者C0：t0p0 、t0p1、t1p0 、t1p1
+    - 消费者C1：t0p2、t1p2
 - RoundRobinAssignor：消费者及消费者订阅的所有主题的分区按照字典序排序，然后通过轮询
-# 8 消费者协调器和组协调器
-- 老版本每个消费者在启动时都会在/consumers/\<group\>/ids 和/brokers/ids 路径上注册一个监听器
-    - 缺点：缺少消费者间协调、羊群效应、ZK数据不一致导致的脑裂
-- 新版本：将全部消费组分成多个子集，每个消费组的子
-集在服务端对应一个GroupCoordinator 对其进行管理， GroupCoordinator 是Kafka 服务端中用于管理消费组的组件。
+    - 如果同一个消费者组所有消费者订阅得主题相同，那么就是均匀的
+        - 消费者C0：t0p0 、t0p2、t1p1
+        - 消费者C1：t0p1、t1p0、t1p2
+    - 否则
+        - 消费者C0：t0p0
+        - 消费者C1：t1p0
+        - 消费者C2：tlp1、t2p0 、t2p1、t2p2
+- StickyAssignor：分区的分配要尽可能均匀，分区的分配**尽可能与上次分配的保持相同**
+# 8 Rebalance
+[Kafka Rebalance机制分析](https://www.cnblogs.com/yoke/p/11405397.html)
+## 8.1 FIND_COORDINATOR
+消费者groupId 最终的**分区分配方案**及组内消费者所提交的**消费位移信息**都会发送给此分区leader 副本所在的broker 节点，
+让此broker 节点既扮演GroupCoordinator 的角色，又扮演保存分区分配方案和组内消费者位移的角色，这样可以省去很多不必要的中间轮转所带来的开销。
+>Kafka在0.9之前是基于Zookeeper来存储Partition的Offset信息(consumers/{group}/offsets/{topic}/{partition})，**因为ZK并不适用于频繁的写操作**，所以在0.9之后通过内置Topic的方式来记录对应Partition的Offset
+
+流程：
+1. 如果消费者还没有和GroupCoordinator建立连接，则向集群中某个节点发送FindCoordinatorRequest
+2. 根据groupId找到对应GroupCoordinator：
+    ```java
+    partition-Id = Math.abs(groupId.hashCode() % groupMetadataTopicPartitionCount)
+    ``` 
+    - 计算GroupId对应在__consumer_offsets上的Partition
+    - 根据对应的Partition寻找该**Partition的leader所对应的Broker**，该Broker上的GroupCoordinator即就是该Group的Coordinator
+## 8.2 JOIN_GROUP
+![](../picture/微服务/kafka/4-Rebalance-1.png)
+- 发送JoinGroupRequest
+所有concumer都向coordinator发送JoinGroup请求，请求加入消费组。一旦所有成员都发送了JoinGroup请求，coordinator会从中选择一个consumer担任leader的角色，并把组成员信息以及订阅信息发给leader。
+- leader选举：
+    - 如果没有leader，第一个加入的为leader
+    - 如果leader退出，利用hashMap的第一个key选举为leader。HashMap key为member_id，value为消费者原数据
+- 各个消费者投票选举分区分配策略   
+## 8.3 SYNC_GROUP
+这一步leader开始分配消费方案，即哪个consumer负责消费哪些topic的哪些partition。一旦完成分配，leader会将这个方案封装进**SyncGroupRequest**中发给coordinator，非leader也会发SyncGroupRequest，只是内容为空。
+
+**coordinator接收到分配方案之后会把方案塞进SyncGroup的response中发给各个consumer**。这样组内的所有成员就都知道自己应该消费哪些分区了。
+![](../picture/微服务/kafka/4-Rebalance-2.png)
+## 8.4 HEARTBEAT(避免不必要的rebalance)
+- session.timeout.ms：心跳超时时间
+- heartbeat.interval.ms：**心跳频率，一般配置为小于超时时间1/3**
+- max.poll.interval.ms：两次调用 poll 方法的最大时间间隔，可以设置的大一点
+
 # 9 **消息交付语义**
 ## 9.1 生产者
 - At most once：acks=0（会导致retries参数失效）
