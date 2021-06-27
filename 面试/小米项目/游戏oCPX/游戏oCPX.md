@@ -29,9 +29,51 @@
     1. 游戏各项实时指标一目了然
     1. 游戏广告先后支持激活、注册、付费、双出价等转化类型的oCPX投放功能，占比从0达到70%，追齐业内领先水平
     2. 
+# 3 归因
+https://wiki.n.miui.com/pages/viewpage.action?pageId=284448719
+## 3.1 服务指标
+- miuiads_miui_ad_emi_billing(4 台)
+    - 64 Partition
+    - QPS 4W
+- bid522(激活)(1 台)
+    - 8 Partition
+    - QPS 1000
+- gamesdk_ods_sdk_s_login(登录)
+    - 8 Partition
+    - QPS 250
+- tranquility 1台
+## 3.2 可用性保证
+## 3.2.1  处理失败重试
+- 重试队列等待一小时：点击数据堆积
+- 关闭时@PreDestroy、钩子函数，jakson序列化到HDFS
+- 失败pivot
+## 3.2.2 归因成功率如何提升
+- 推动加入OAID，**策略模式**引入OAID，归因成功率提升到98%
+## 3.2.3 Talos
+- 自动提交：在单线程情况下是at least once
+- 转化归因
+    - 登录归因：本来就要去重（重复登录算一次）
+    - 注册归因：可能重复
+    - 激活：每日只算一次
+    - 付费：orderId+date去重
+- 手动同步提交会耗费性能，一条提交一次性能最差
+- 上游数据会重复
+- 调用 shutdown 方法会把最后一次拉取的都处理完
+## 3.2 设计模式
+- 责任链模式
+- 策略模式
+## 3.4 **pegasus**
+- hashkey：imei
+- sortkey：prefix+appid 字节序
+## 3.6 druid
+- 为什么要消耗talos
+## 3.7 难点是什么？
+- 归因成功率如何提升
+- 处理失败重试
+
 
 # 1 广告系统架构
-![](../picture/简历/3-广告系统架构.png)
+![](./picture/3-广告系统架构.png)
 - SDK是干啥的？
 - 打点线
 - 
@@ -42,7 +84,7 @@
 - DMP：Data Management Platform：用户画像。DSP在做广告投放的时候，需要用数据来优化投放效果，数据有些自己的，**也可以从DMP获取**。最简单的方式就是DMP对于每一个设备打上标签，DSP在获取从AdExchange来的广告展示请求的时候，同时获取了设备信息和DMP的标签信息，然后通过自己的算法模型来决定出价。
 ## 1.2 DE设计
 ### 1.2.1 请求生命周期
-![](../picture/简历/5-生命周期.png)
+![](./picture/5-生命周期.png)
 
 都采用策略模式：
 ```java
@@ -54,9 +96,9 @@ Map<MediaType, BaseReshaper> mediaType2ReshaperMap = new HashMap<>();
 - Supply：
     ```java
     BrowserRequestContext requestContext = new BrowserRequestContext(serviceContext, clientInfoV3, resourceAccessor);
-        PipelineGroup<BrowserRequestContext> pipelineGroup = browserStrategyManager.getPipelineGroup(requestContext);
-        List<CommonAd> commonAds = PipelineEngine.getAds(pipelineGroup);
-        List<AdInfo> adInfoList = commonAds.stream().map(CommonAd::getAdInfo).collect(Collectors.toList());
+    PipelineGroup<BrowserRequestContext> pipelineGroup = browserStrategyManager.getPipelineGroup(requestContext);
+    List<CommonAd> commonAds = PipelineEngine.getAds(pipelineGroup);
+    List<AdInfo> adInfoList = commonAds.stream().map(CommonAd::getAdInfo).collect(Collectors.toList());
     ```
     - BrowserStrategyManager中维护tagId2PipelineCreators，根据请求TagId查找pipelineCreator，构建pipeline，组合成PipelineGroup
 ### 1.2.2 PipelineEngine
@@ -88,7 +130,7 @@ Map<MediaType, BaseReshaper> mediaType2ReshaperMap = new HashMap<>();
 
     ```
 ### 1.2.3 SupplyControl
-![](../picture/简历/4-supply.png)
+![](./picture/4-supply.png)
 ## 1.3 GameOcpa
 ### 1.3.1 @Conditional
 ```java
@@ -123,54 +165,16 @@ eCPM：effective cost per mile
 - 对于客户，广告曝光给了**更高转化率**人群
 - 对于流量方，高转化人群的eCPM更高，从而**流量单价变贵**，广告收入提升
 
-# 3 归因
-https://wiki.n.miui.com/pages/viewpage.action?pageId=284448719
-## 3.1 服务指标
-- miuiads_miui_ad_emi_billing(4 台)
-    - 64 Partition
-    - QPS 4W
-- bid522(激活)(1 台)
-    - 8 Partition
-    - QPS 1000
-- gamesdk_ods_sdk_s_login(登录)
-    - 8 Partition
-    - QPS 250
-- tranquility 1台
-## 3.2 可用性保证
-## 3.2.1  处理失败重试
-- 重试队列等待一小时：点击数据堆积
-- 关闭时@PreDestroy、钩子函数，jakson序列化到HDFS
-- 失败pivot
-## 3.2.2 归因成功率如何提升
-- 推动加入OAID，**策略模式**引入OAID，归因成功率提升到98%
-- ？？？
-## 3.2.3 Talos
-- 自动提交：在单线程情况下是at least once
-- 转化归因
-    - 登录归因：本来就要去重（重复登录算一次）
-    - 注册归因：可能重复
-    - 激活：每日只算一次
-    - 付费：orderId+date去重
-- 手动同步提交会耗费性能，一条提交一次性能最差
-- 上游数据会重复
-- 调用 shutdown 方法会把最后一次拉取的都处理完
-## 3.2 设计模式
-- 责任链模式
-- 策略模式
-## 3.4 **pegasus**
-- hashkey：imei
-- sortkey：prefix+appid 字节序
-## 3.6 druid
-- 为什么要消耗talos
-## 3.7 难点是什么？
+
 
 # 4 风控PID？
 ## 4.1 PID原理
 [经典的自动控制算法 PID](http://www.woshipm.com/pd/4206858.html)
+用空调举例
 - 公式：
-    ![](../picture/简历/1-pid.png)
+    ![](./picture/1-pid.png)
 - 离散形式：
-    ![](../picture/简历/2-pid.png)
+    ![](./picture/2-pid.png)
 - 小米
     - P(t) = (targetCpa - realCpa) / targetCpa
     - PID(t) = kp * P(t) + ki * I(t) + kd * D(t) 
@@ -187,9 +191,10 @@ https://wiki.n.miui.com/pages/viewpage.action?pageId=284448719
     - window：TumblingProcessingTimeWindows.of(Time.days(1), Time.hours(-8))
     - trigger：ContinuousProcessingTimeTrigger.of(Time.seconds(30))
     - reduce
-## 5 出价模块
+    - 缓存
+# 5 出价模块
 策略模式：GameBidPriceCalculatorManager
-## 6 策略分层
+# 6 策略分层
 StrategyExecutorManager持有expId2ExecutorMap
 StrategyPipelineManager持有pipelines
 https://xiaomi.f.mioffice.cn/docs/doccnYYzq1Yyeo3ennu2JXwNfkK#NPgeXr
@@ -206,3 +211,4 @@ https://xiaomi.f.mioffice.cn/docs/dock4uWI5NQYKtnsaUzkxLP9vRd
   - 灵活使用builder，享元设计模式，为每个请求定制策略逻辑
   - 构建多层次上下文满足不同的策略需求
 
+# 7 RPC?

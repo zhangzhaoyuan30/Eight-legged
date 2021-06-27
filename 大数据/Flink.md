@@ -1,4 +1,50 @@
 
+<!-- TOC -->
+
+- [1 特性](#1-特性)
+- [2 基本概念](#2-基本概念)
+    - [2.1 Parallel](#21-parallel)
+    - [2.2 两类进程](#22-两类进程)
+- [3 window](#3-window)
+    - [3.1 分类](#31-分类)
+    - [3.2 组件](#32-组件)
+    - [3.3 watermark](#33-watermark)
+    - [3.3 窗口应用函数](#33-窗口应用函数)
+    - [3.4 晚到事件](#34-晚到事件)
+- [4 time](#4-time)
+    - [4.1 Processing Time](#41-processing-time)
+    - [4.2 Event Time](#42-event-time)
+    - [4.3 Ingestion Time](#43-ingestion-time)
+- [5 DataStram API](#5-datastram-api)
+    - [5.1 物理分组](#51-物理分组)
+    - [5.2 TypeInformation](#52-typeinformation)
+- [6 State](#6-state)
+    - [6.1 应用](#61-应用)
+    - [6.2 分类](#62-分类)
+- [7 Checkpoint 和 Savepoint](#7-checkpoint-和-savepoint)
+    - [7.1 概念](#71-概念)
+    - [7.2 存储](#72-存储)
+    - [7.3 exactly-once原理](#73-exactly-once原理)
+        - [7.3.1 内部](#731-内部)
+        - [7.3.2 端到端](#732-端到端)
+- [8 Flink Runtime](#8-flink-runtime)
+    - [8.1 总体](#81-总体)
+    - [8.2 JobManager](#82-jobmanager)
+    - [8.2 TaskManager](#82-taskmanager)
+    - [8.3 集群](#83-集群)
+- [9 Join](#9-join)
+    - [9.1 内连接](#91-内连接)
+    - [9.1.1 Window Join](#911-window-join)
+    - [9.1.2 Interval Join](#912-interval-join)
+    - [9.2 coGroup（自定义连接）](#92-cogroup自定义连接)
+- [10 反压机制](#10-反压机制)
+    - [10.1 Rate Limiter 静态限流](#101-rate-limiter-静态限流)
+    - [10.2 动态反馈](#102-动态反馈)
+    - [10.3 Flink](#103-flink)
+- [11 内存设置](#11-内存设置)
+- [12 作业优化](#12-作业优化)
+
+<!-- /TOC -->
 # 1 特性
 - 有状态计算的**Exactly-once**语义。
 - 支持高度灵活的窗口（**window**）操作。支持基于time、count、session，以及data-driven的窗口操作，能很好的对现实环境中的创建的数据进行建模。
@@ -14,9 +60,17 @@
 Partition），一个Operator的并行度等于Operator Subtask的个数，**一个Stream的并行度总是等于生成它的Operator的并行度**
 - **Operator Chain**：多个Operator 串起来组成一个Operator Chain，作为一个task ，会在TaskManager上**一个独立的线程Task slot**中执行
 ## 2.2 两类进程
-- JobManager（又称为 JobMaster）：协调 Task 的分布式执行，包括调度 Task、协调创 Checkpoint 以及当 Job failover 时协调各个 Task 从 Checkpoint 恢复等。
+- JobManager（又称为 JobMaster）：协调 Task 的分布式执行，包括调度 Task、协调创建 Checkpoint 以及当 Job failover 时协调各个 Task 从 Checkpoint 恢复等。
 - TaskManager（又称为 Worker）：执行 Dataflow 中的 Tasks，包括内存 Buffer 的分配、Data Stream 的传递等。
     - Task Slot 是一个 TaskManager 中的最小资源分配单位，一个 TaskManager 中有多少个 Task Slot 就意味着能支持多少并发的 Task 处理。需要注意的是，**一个 Task Slot 中可以执行多个 Operator，一般这些 Operator 是能被 Chain 在一起处理的**
+    - chain条件：
+        - 上下游算子的并行度一致
+        - 下游节点的入度为1 
+        - 上下游节点都在同一个 slot group 中
+        - 下游节点的 chain 策略为 ALWAYS（可以与上下游链接，map、flatmap、filter等默认是ALWAYS）
+        - 上游节点的 chain 策略为 ALWAYS 或 HEAD（只能与下游链接，不能与上游链接，Source默认是HEAD）
+        - 两个节点间数据分区方式是 forward
+        用户没有禁用 chain（代码中是否配置disableChain()）
 # 3 window
 [flink--window、eventTime和watermark原理和使用](https://blog.51cto.com/kinglab/2457255)
 ## 3.1 分类
@@ -40,7 +94,7 @@ Window 中的三个核心组件：WindowAssigner、Trigger 和 Evictor
 
 产生：
 - AssignerWithPeriodicWatermarks：周期性产生（默认200ms）
-    - BoundedOutOfOrdernessTimestampExtractor：
+    - BoundedOutOfOrdernessTimestampExtractor(Time maxOutOfOrderness)：允许乱序时间
     - AscendingTimestampExtractor
 - AssignerWithPunctuatedWatermarks：不间断产生
 
@@ -80,10 +134,10 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 - PartitionCustomer：当上述内置分配方式不满足需求时，用户还可以选择自定义分组方式。
 ## 5.2 TypeInformation 
 ![](../picture/大数据/flink/3-TypeInformation.png)
-POJO：
-- 该类是公有且独立的（没有非静态内部类）
-- 该类有公有的无参构造函数
-- 类（及父类）中所有的所有不被 static、transient 修饰的属性要么是公有的（且不被 final 修饰），要么是包含公有的 getter 和 setter 方法，这些方法遵循 Java bean 命名规范。
+- POJO：
+    - 该类是公有且独立的（没有非静态内部类）
+    - 该类有公有的无参构造函数
+    - 类（及父类）中所有的所有不被 static、transient 修饰的属性要么是公有的（且不被 final 修饰），要么是包含公有的 getter 和 setter 方法，这些方法遵循 Java bean 命名规范。
 # 6 State
 ## 6.1 应用
 - 单条输入仅包含所需的部分信息
@@ -111,7 +165,7 @@ Chandy-Lamport algorithm
 - barrier策略
     - barrier 从 Source Task 处生成，一直流到 Sink Task，期间所有的 Task 只要碰到barrier，就会触发自身进行快照
     - CheckPoint 过程中有一个同步做快照的环节不能处理 barrier 之后的数据
-    - 一旦 Operator 从输入流接收到 CheckPoint barrier n，它就不能处理来自该流的任何数据记录，直到它从其他所有输入接收到 barrier n 为止。否则就是 At Least Once
+    - 一旦 Operator 从输入流接收到 CheckPoint barrier n，它就不能处理来自该流的任何数据记录，直到它从其他所有输入（keyBy、join）接收到 barrier n 为止。否则就是 At Least Once
 - 整个流程
     - JobManager 端的 CheckPointCoordinator 向所有 SourceTask 发送 CheckPointTrigger，Source Task 会在数据流中**安插 CheckPoint barrier**。
     - 当 task 收到所有的 barrier 后，向自己的下游继续传递 barrier，然后自身执行快照，并将自己的状态异步写入到持久化存储中。
@@ -121,8 +175,9 @@ Chandy-Lamport algorithm
         - 如果 CheckPoint 的持续时长超过了 CheckPoint 设定的**超时**时间，CheckPointCoordinator 还没有收集完所有的 State Handle，CheckPointCoordinator 就会认为本次 CheckPoint 失败，**会把这次 CheckPoint 产生的所有状态数据全部删除**。
     - 最后 CheckPointCoordinator 会把整个 StateHandle 封装成 completed CheckPoint Meta，写入到 hdfs。
 ### 7.3.2 端到端
-flink提供了TwoPhaseCommitSinkFunction  
-[Flink Kafka 端到端 Exactly-Once 分析](https://ververica.cn/developers/flink-kafka-end-to-end-exactly-once-analysis/)
+- flink提供了TwoPhaseCommitSinkFunction  
+- [Flink Kafka 端到端 Exactly-Once 分析](https://ververica.cn/developers/flink-kafka-end-to-end-exactly-once-analysis/)
+
 要使数据输出端提供Exactly-Once保证，它必须将所有数据通过一个事务提交给Kafka。**提交捆绑了两个checkpoint之间的所有要写入的数据**。这可确保在发生故障时能回滚写入的数据
 
 当输入源和输出都是 kafka 的时候，Flink 之所以能做到端到端的 Exactly-Once 语义，主要是因为第一阶段 FlinkKafkaConsumer 会将消费的 offset 信息通过checkpoint 保存，**所有 checkpoint 都成功之后，第二阶段 FlinkKafkaProducer 才会提交事务**，结束 producer 的流程。这个过程中很大程度依赖了 kafka producer 事务的机制。
@@ -130,9 +185,9 @@ flink提供了TwoPhaseCommitSinkFunction
 对于flink，Semantic.EXACTLY_ONCE 模式依赖于事务提交的能力。事务提交发生于触发 checkpoint 之前，以及从 checkpoint 恢复之后。如果从 Flink 应用程序崩溃到完全重启的时间超过了 Kafka 的事务超时时间，那么将会有数据丢失（Kafka 会自动丢弃超出超时时间的事务）。考虑到这一点，请根据预期的宕机时间来合理地配置事务超时时间。
 
 步骤如下
-- 在checkpoint开始的时候，即两阶段提交协议的“预提交”阶段，将两次checkpoint之间的数据放在一个事务中，一起预提交，在 preCommit 方法中执行flush
+- 在checkpoint开始的时候，即两阶段提交协议的“预提交”阶段，将两次checkpoint之间（上次和本次）的数据放在一个事务中，一起预提交，在 preCommit 方法中执行flush
 - 下一步是通知所有operator，checkpoint已经成功了。这是两阶段提交协议的提交阶段，JobManager为应用程序中的每个operator发出checkpoint已完成的回调。  
-数据源和widnow operator没有外部状态，因此在提交阶段，这些operator不必执行任何操作。但是，数据输出端（Data Sink）拥有外部状态，**此时应该提交外部事务**。
+- 数据源和widnow operator没有外部状态，因此在提交阶段，这些operator不必执行任何操作。但是，数据输出端（Data Sink）拥有外部状态，**此时应该提交外部事务**。
 # 8 Flink Runtime
 ## 8.1 总体
 - per-job
@@ -162,10 +217,10 @@ flink提供了TwoPhaseCommitSinkFunction
 ## 9.1.1 Window Join 
 - Tumbling Window Join
 - Sliding Window Join
-- Session Window Join
+- Session Window Join（竞价数据采用）
 ## 9.1.2 Interval Join 
 a.timestamp + lowerBound <= b.timestamp <= a.timestamp + upperBound
-## 9.3 coGroup
+## 9.2 coGroup（自定义连接）
 ```java
 public abstract class RichCoGroupFunction<IN1, IN2, OUT> extends AbstractRichFunction implements CoGroupFunction<IN1, IN2, OUT> {
 
@@ -195,13 +250,17 @@ Consumer 能够及时的给 Producer 做一个 feedback，即告知 Producer 能
         1. TaskManager 中的Task会复用同一个 Socket 进行传输
         2. 依赖最底层的 TCP 去做流控，会导致反压传播路径太长，导致生效的延迟比较大
 - 1.5之后改为credit机制：每次InputGate会告诉ResultPartition自己还有多少的空闲量可以接收，模拟TCP流控
-- 反压值代表反压的频率
+- 反压值代表反压的频率：默认情况下，JobManager 会触发 100 次采样，每次间隔 50ms 来确定反压，重新采样时间为 1min。 你在 Web 界面看到的比率表示在获得的样本中有多少表明 Task 正在被反压，例如: 0.01 表示 100 个样本中只有 1 个反压了。
 
 # 11 内存设置
 [Flink 1.10之改进的TaskManager内存模型与配置](https://cloud.tencent.com/developer/article/1630925)
 
 ![](../picture/大数据/flink/11-内存.jpeg)
 
+一般需要在设置
+- 进程总内存：taskmanager.memory.process.size
+- 托管内存，用于RocksDB：taskmanager.memory.managed.fraction
+- 网络缓存，用于shuffle,broadcast：taskmanager.memory.network.fraction
 # 12 作业优化
 [Flink 作业问题分析和调优实践](https://www.infoq.cn/article/j1ucfxizcridmhtfvwt6)
 “一压二查三指标，延迟吞吐是核心。时刻关注资源量，排查首先看 GC。”

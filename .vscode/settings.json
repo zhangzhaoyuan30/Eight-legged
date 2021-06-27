@@ -1,3 +1,8 @@
 {
-    "files.eol": "\n"
+    "files.eol": "\n",
+    "markdown-pdf.displayHeaderFooter": false,
+    "markdown-pdf.styles": [
+        "C:\\\\Users\\\\zhang\\\\Desktop\\\\doc\\\\markdown_2.css"
+    ],
+    "markdown-pdf.StatusbarMessageTimeout": 100000
 }

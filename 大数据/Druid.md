@@ -1,6 +1,10 @@
 <!-- TOC -->
 
 - [1 OLAP VS OLTP](#1-olap-vs-oltp)
+- [2 多维数据模型](#2-多维数据模型)
+- [3 列式存储？](#3-列式存储)
+    - [3.1 行式存储](#31-行式存储)
+    - [3.2 列式存储](#32-列式存储)
 - [2 进程与服务](#2-进程与服务)
     - [2.1 Master](#21-master)
     - [2.2 Query](#22-query)
@@ -30,38 +34,49 @@
 |功能|日常操作处理|**分析决策**|
 |DB 设计|面向应用|面向主题|
 |数据|当前的，最新的细节的，二维的分立的|**历史的，聚集的，多维的**|
-|存取|读/写数十条记录|读上百万条记录|
-|任务|**简单的事务**|**复杂的查询**|
+|存取|读/写数十条记录|读上百万条记录（归因一天1亿）|
+|**任务**|**简单的事务**|**复杂的查询**|
 |**DB 大小**|100MB-GB|100GB-TB|
 |性能指标|**事务的吞吐量**|**查询QPS（延迟s级别）**|
 
+# 2 多维数据模型
+[OLAP数仓入门问答-基础篇](https://zhuanlan.zhihu.com/p/144926830)
+- 事实表：记录具体事件
+- 维表：每个维度表都是对事实表中的每个列/字段进行展开描述
+- 数据立方体
+![](../picture/大数据/druid/5-数据立方体.jpg)
+    - 钻取（Drill-down）：从上一个层次到下一层
+    - 上卷（Roll-up）：从细粒度数据向上层聚合
+    - 切片（Slice）：只选某一个维度的数据
+    - 切块（Dice）：选择维中特定区间的数据或者某批特定值进行分析
+    - 旋转（Pivot）：维的位置的互换
+
+# 3 列式存储？
+## 3.1 行式存储
+大多数操作都以实体（entity）为单位，即大多为增删改查一整行记录，显然把一行数据存在物理上相邻的位置是个很好的选择
+## 3.2 列式存储
+- 列式存储可以满足快速读取特定列的需求，在线分析处理往往需要在**上百列的宽表**中**读取指定列**分析
+- 列式存储**就近存储同一列的数据**，使用压缩算法可以得到更高的**压缩率**，减少存储占用的磁盘空间
 # 2 进程与服务
 ![](../picture/大数据/druid/1-架构.png)
 ## 2.1 Master
 **管理数据的摄取和可用性**：
 它负责启动新的摄取作业并协调下面描述的"Data服务"上数据的可用性。
-- Coordinator  
-Coordinator会定期（默认一分钟）同步Zookeeper中整个集群的数据拓扑图、元信息库中所有有效的Segment信息以及规则库，从而决定下一步应该做什么。并**通过ZK通知Historical加载或卸载Segmengt**
+- Coordinator：Coordinator会定期（默认一分钟）同步元信息库中所有有效的Segment信息。并**通过ZK通知Historical加载或卸载Segmengt**，确保所有Historical节点间的段均衡
 - Overlord：监视Data服务中的MiddleManager进程，并且是Druid数据接收的控制器。它们负责将接收任务分配给MiddleManager，并协调数据段的发布
 ## 2.2 Query
 处理客户端应用程序**请求**，将查询**路由**到Data服务或其他Query服务
-- Broker：
-    Broker Node是整个集群查询的入口，Broker Node感知Zookeeper上保存的集群内所有已发布的Segment的元信息，即每个Segment保存在哪些存储节点上，Broker Node为Zookeeper中每个dataSource创建一个timeline，**timeline按照时间顺序描述了每个Segment的存放位置**。我们知道，每个查询请求都会包含dataSource以及interval信息，Broker Node根据这两项信息去查找timeline中所有满足条件的Segment所对应的存储节点，并将查询请求发往对应的节点。
-    
-    **对于Historical Node返回的结果，Broker Node认为是“可信的”，会缓存下来**，而Real-Time Node返回的实时窗口内的数据，Broker Node认为是可变的，“不可信的”，故不会缓存。所以对每个查询请求，Broker Node都会先查询本地缓存，如果不存在才会去查找timeline，再向相应节点发送查询请求。
+- Broker：Broker进程负责接受Client的查询请求，并根据ZK存储的信息，将查询转发到Historical和Middlemanager中。Broker会接受所有子查询的结果，并且将数据进行合并返回给Client
 - Router（可选）：为Druid Broker、Overlord和Coordinator提供一个统一的API网关
 ## 2.3 Data
 执行摄取作业并存储所有可查询的数据
-- Historical  
-    Historical Node的职责单一，就是负责加载Druid中非实时窗口内且满足加载规则的所有历史数据的Segment。每一个Historical Node只与Zookeeper保持同步，不与其他类型节点或者其他Historical Node进行通信。
-
-    Coordinator Nodes会定期（默认为1分钟）去同步元信息库，感知新生成的Segment，将待加载的Segment信息保存在Zookeeper中在线的Historical Nodes的load queue目录下，当Historical Node感知到需要加载新的Segment时，首先会去本地磁盘目录下查找该Segment是否已下载，如果没有，则会从Zookeeper中下载待加载Segment的元信息，此元信息包括Segment存储在何处、如何解压以及如何如理该Segment。Historical Node使用内存文件映射方式将index.zip中的XXXXX.smoosh文件加载到内存中，并在Zookeeper中本节点的served segments目录下声明该Segment已被加载，从而该Segment可以被查询。对于重新上线的Historical Node，在完成启动后，也会扫描本地存储路径，将所有扫描到的Segment加载如内存，使其能够被查询。
-- MiddleManager：处理将新数据**摄取**到集群中的操作, 他们负责读取外部数据源并**发布新的Druid段**
+- Historical：Historical是用于处理存储和查询历史数据的进程，它会从深层存储中下载段，并且响应这些段的查询
+- MiddleManager：处理将新数据**摄取**到集群中的操作, 他们负责读取外部数据源并**发布新的Druid段**，段的元数据写入元数据库
 # 3 外部依赖
 ## 3.1 深度存储
 Druid只使用深度存储作为**数据备份**，并作为在后台**Druid进程之间传输数据**的一种方式。为了响应查询，**Historical进程不会从深层存储中读取数据**，而是从本地磁盘读取在执行任何查询之前预缓存的段，这意味着**Druid在查询期间不需要访问深层存储**，这有助于它提供尽可能最好的查询延迟。
 ## 3.2 元数据存储
-元数据存储包含各种共享的系统元数据，如**段的schema、大小以及在深度存储中的位置**。
+元数据存储包含各种共享的系统元数据，如**段的schema、大小以及在深度存储中的位置**，一般存在Mysql中
 ## 3.3 Zookeeper
 用于内部服务发现、协调和领导选举。
 1. Coordinator Leader选举
@@ -91,6 +106,7 @@ dimension列是不同的，因为它们支持**过滤和聚合**操作，所以�
 - 版本号（通常是ISO8601时间戳，对应于段集首次启动的时间）
 - 分区号（整数，在datasource+interval+version中是唯一的，不一定是连续的）。
 ## 4.3 段的组成
+![](../picture/大数据/druid/6-段.png)
 在底层，一个段由以下**几个文件**组成：
 - version.bin  
 4个字节，以整数表示当前段版本。 例如，对于v9段，版本为0x0、0x0、0x0、0x9
@@ -136,3 +152,4 @@ MiddleManager结点持有实时数据，Historical结点持有历史数据。两
 - 预聚合
 - 列式存储 + 位图倒排索引
 - Broker LRU缓存
+

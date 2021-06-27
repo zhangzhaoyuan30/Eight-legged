@@ -68,7 +68,7 @@
 - 桶：
 每个桶代表1秒，桶中的数据就是1秒内各处理结果的请求数量
 - 滑动窗口：  
-若每次的决策都以**10个Bucket**的数据为依据，10个Bucket就是10秒，这个10秒就是一个滑动窗口(Rolling window)。滑动意味着：在没有熔断时，每当收集好一个新的Bucket后，就会丢弃掉最旧的一个Bucket。
+若每次的决策都以**10个Bucket**的数据为依据，10个Bucket就是10秒，这个10秒就是一个滑动窗口(Rolling window)。滑动意味着：在没有熔断时，**每当收集好一个新的Bucket后，就会丢弃掉最旧的一个Bucket**。
 # 7降级注意事项？
 有时，如果调用依赖服务失败，可以从缓存服务（如redis）中查询旧数据版本。由于又会**发起远程调用**，所以建议重新封装一个Command，使用不同的ThreadPoolKey，与主线程池进行隔离。
 # 8线程池隔离维度，几个key的含义？
@@ -99,3 +99,9 @@ https://sentinelguard.io/zh-cn/docs/introduction.html
 
 # 10 配置
 [Hystrix 配置内容](https://wiki.n.miui.com/pages/viewpage.action?pageId=34969752)
+- 熔断触发的异常率：30%
+- 熔断打开后，重试操作的间隔时间：5s
+- 执行的超时时间：250ms
+- 熔断统计桶个数：10
+- 线程池大小
+- 队列
