@@ -14,6 +14,7 @@
     - [4.3 IOC容器初始化过程](#43-ioc容器初始化过程)
         - [4.3.1 refresh](#431-refresh)
         - [4.3.2 obtainFreshBeanFactory()](#432-obtainfreshbeanfactory)
+        - [4.3.2 obtainFreshBeanFactory()](#432-obtainfreshbeanfactory)
         - [4.3.3 finishBeanFactoryInitialization(beanFactory)](#433-finishbeanfactoryinitializationbeanfactory)
     - [4.4 Bean生命周期](#44-bean生命周期)
         - [4.4.1 销毁Bean](#441-销毁bean)
@@ -28,9 +29,11 @@
     - [5.3 AOP基本概念](#53-aop基本概念)
     - [5.4 使用](#54-使用)
     - [5.5 Proceedingjoinpoint和Joinpoint](#55-proceedingjoinpoint和joinpoint)
+    - [5.5 Proceedingjoinpoint和Joinpoint](#55-proceedingjoinpoint和joinpoint)
     - [5.6 原理](#56-原理)
 - [6 @Autowired @Resource @Qualifier区别](#6-autowired-resource-qualifier区别)
 - [7 Spring MVC？](#7-spring-mvc)
+    - [7.1 MVC模式](#71-mvc模式)
     - [7.1 MVC模式](#71-mvc模式)
     - [7.2 ApplicationContext启动](#72-applicationcontext启动)
     - [7.3 初始化DispatcherServlet](#73-初始化dispatcherservlet)
@@ -81,7 +84,14 @@
 # 4 IOC
 [Spring IOC 容器源码分析系列文章导读](http://www.tianxiaobo.com/2018/05/30/Spring-IOC-%E5%AE%B9%E5%99%A8%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E7%B3%BB%E5%88%97%E6%96%87%E7%AB%A0%E5%AF%BC%E8%AF%BB/)
 ## 4.1 IOC是什么？
-对象依赖关系的管理被反转
+https://en.wikipedia.org/wiki/Inversion_of_control
+https://en.wikipedia.org/wiki/Dependency_injection
+
+反转了控制流，程序的自定义编写部分从框架接收控制流：在传统的编程中，表达程序目的的自定义代码调用可重用的库来处理通用任务，但是在IOC中，是框架调用自定义代码。
+
+目的：
+- 在写自己的模块时不用关心其他系统是如何工作的（不用关心对象创建、依赖管理）
+- 容易更换实现
 ## 4.2 BeanFactory和ApplicationContext区别?
 ![](../picture/Java/Spring/2-BeanFactory.png)
 - ApplicationContext
