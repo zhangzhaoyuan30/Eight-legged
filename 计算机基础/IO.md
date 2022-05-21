@@ -79,6 +79,7 @@
 - 优点：业务处理代码和请求处理分离，从而使业务代码模块化、可复用
 - 代码  
 [Reactor I/O模型](https://www.xncoding.com/2018/04/05/java/reactor.html)
+- 总结：
 
 # 6 AIO
 AsynchronousServerSocketChannel

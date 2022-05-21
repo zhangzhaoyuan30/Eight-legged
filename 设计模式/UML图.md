@@ -1,5 +1,13 @@
-# 1.UML图  
+<!-- TOC -->
+
+- [1 UML图](#1-uml图)
+- [2 时序图](#2-时序图)
+
+<!-- /TOC -->
+# 1 UML图  
 [UML图](https://blog.csdn.net/zhangzhaoyuan30/article/details/95969773)
+
+[通过简单例子 | 快速理清 UML 中类与类的六大关系](https://juejin.cn/post/7017014503007059998)
 箭头指向的都是被xxx者
 - 成员变量：
     - 关联：
@@ -17,3 +25,6 @@
         - 带**普通箭头虚线**
 - 继承和实现
     - 带**三角**箭头
+
+# 2 时序图
+[时序图绘制](https://segmentfault.com/a/1190000040836364)

@@ -1,27 +1,31 @@
 <!-- TOC -->
 
-- [1Thrift架构](#1thrift架构)
-- [2Thrift Hello World!](#2thrift-hello-world)
-    - [2.1客户端](#21客户端)
-    - [2.2服务端](#22服务端)
+- [1 Thrift架构](#1-thrift架构)
+- [2 Thrift Hello World!](#2-thrift-hello-world)
+    - [2.1 客户端](#21-客户端)
+    - [2.2 服务端](#22-服务端)
+    - [2.2 服务端](#22-服务端)
 - [3 传输层](#3-传输层)
-- [4协议层](#4协议层)
-- [5处理层（IDL生成）](#5处理层idl生成)
-    - [5.1Client](#51client)
-    - [5.2Processor](#52processor)
-    - [5.3方法名_args和方法名_result](#53方法名_args和方法名_result)
-- [6服务层](#6服务层)
-    - [6.1阻塞](#61阻塞)
-    - [6.2非阻塞](#62非阻塞)
-    - [6.3FrameBuffer](#63framebuffer)
-- [7IDL文件](#7idl文件)
-- [8在公司的使用](#8在公司的使用)
+- [3 传输层](#3-传输层)
+- [4 协议层](#4-协议层)
+- [5 处理层（IDL生成）](#5-处理层idl生成)
+    - [5.1 Client](#51-client)
+    - [5.2 Processor](#52-processor)
+    - [5.3 方法名args和方法名result](#53-方法名args和方法名result)
+- [6 服务层](#6-服务层)
+    - [6.1 阻塞](#61-阻塞)
+    - [6.2 非阻塞](#62-非阻塞)
+    - [6.3 FrameBuffer](#63-framebuffer)
+- [7 IDL文件](#7-idl文件)
+- [8 在公司的使用](#8-在公司的使用)
     - [8.1 服务端](#81-服务端)
     - [8.2 客户端](#82-客户端)
     - [8.3 对象池](#83-对象池)
 - [9 服务治理](#9-服务治理)
 
 <!-- /TOC -->
+
+[Thrift源码分析](https://blog.csdn.net/iter_zc/category_2585735.html)
 # 1Thrift架构
 [Thrift network stack](https://thrift.apache.org/docs/concepts.html)  
 ![](../picture/微服务/thrift/1-架构.jpg)  
@@ -46,6 +50,16 @@ IDL生成
 - 业务层：HelloService实现类
 # 2Thrift Hello World!
 ## 2.1客户端
+[thrift源码（二）异步客户端](https://throwsnew.com/2019/08/05/thrift%E6%BA%90%E7%A0%81%EF%BC%88%E4%BA%8C%EF%BC%89%E5%BC%82%E6%AD%A5%E5%AE%A2%E6%88%B7%E7%AB%AF/)
+
+[Thrift 客户端异步请求](https://helloworlde.github.io/2021/02/20/Thrift-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%BC%82%E6%AD%A5%E8%AF%B7%E6%B1%82/)
+
+异步客户端  
+1. 有一个TAsyncClientManager持有一个selectThread
+2. 方法调用的时候会把TAsyncMethodCall 加入到 TAsyncClientManager 的 队列里，并在selectThread#startPendingMethods中注册到select中，将自己绑定到key上
+3. selectThread#transitionMethods 方法中执行读写逻辑，调用TAsyncMethodCall 的 transition方法。TAsyncMethodCall持有state状态机
+
+
 ```java
 TSocket socket = new TSocket("127.0.0.1", 9090);
 socket.setTimeout(3000);
@@ -75,6 +89,8 @@ try {
 }
 ```
 # 3 传输层
+[03. Apache thrift 之网络模型](https://juejin.cn/post/6968641908314751012)
+
 传输层负责直接从网络中读取和写入数据，封装了Java Socket  
 - 节点流
     - 网络相关封装：简化使用
@@ -216,6 +232,7 @@ IDL生成生成的客户端写参数的方法和服务端读参数的方法一�
     - 采用了一个**AcceptorThread**来Accept，将SocketChannel放到**SelectorThread**的阻塞队列**acceptedQueue**中
     - 每个SelectorThread绑定一个Selector，从acceptedQueue中拿新创建好的SocketChannel，注册到selector中，后续再处理读写事件和方法调用（可以在SelectorThread本线程中，也可以在线程池中）
 ## 6.3FrameBuffer
+[Thrift源码分析（五）-- FrameBuffer类分析](https://blog.csdn.net/ITer_ZC/article/details/39694129)
 - 通过SelectionKey.attachment()与key绑定，并将key作为成员变量
 - 维护了一个FrameBufferState表示读写和方法调用的状态，并且根据此状态修改SelectionKey的读写状态
 - 拥有read()和write()进行真正的IO读写，写入一个自身维护的buffer
