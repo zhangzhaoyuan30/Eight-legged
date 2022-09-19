@@ -3,6 +3,8 @@
 - [1 Thrift架构](#1-thrift架构)
 - [2 Thrift Hello World!](#2-thrift-hello-world)
     - [2.1 客户端](#21-客户端)
+    - [2.1.1 异步客户端](#211-异步客户端)
+    - [2.1.2 同步客户端](#212-同步客户端)
     - [2.2 服务端](#22-服务端)
     - [2.2 服务端](#22-服务端)
 - [3 传输层](#3-传输层)
@@ -54,12 +56,23 @@ IDL生成
 
 [Thrift 客户端异步请求](https://helloworlde.github.io/2021/02/20/Thrift-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%BC%82%E6%AD%A5%E8%AF%B7%E6%B1%82/)
 
-异步客户端  
+## 2.1.1 异步客户端  
 1. 有一个TAsyncClientManager持有一个selectThread
 2. 方法调用的时候会把TAsyncMethodCall 加入到 TAsyncClientManager 的 队列里，并在selectThread#startPendingMethods中注册到select中，将自己绑定到key上
 3. selectThread#transitionMethods 方法中执行读写逻辑，调用TAsyncMethodCall 的 transition方法。TAsyncMethodCall持有state状态机
+```java
+TAsyncClientManager clientManager = new TAsyncClientManager();
+TNonblockingTransport transport = new TNonblockingSocket("localhost", 7911);
+TProtocolFactory protocol = new TBinaryProtocol.Factory();
+HelloService.AsyncClient asyncClient = new HelloService.AsyncClient(protocol, clientManager, transport);
+asyncClient.setTimeout(1500L);
+System.out.println("client async calls");
+HelloStringCallback callback = new HelloStringCallback();
+asyncClient.helloString("hello", callback);
+```
 
 
+## 2.1.2 同步客户端
 ```java
 TSocket socket = new TSocket("127.0.0.1", 9090);
 socket.setTimeout(3000);

@@ -27,7 +27,7 @@
 # 3 select、poll、epoll
 [select、poll、epoll](https://www.cnblogs.com/aspirant/p/9166944.html)  
 [Linux IO模式及 select、poll、epoll详解](https://www.cnblogs.com/aspirant/p/9166944.html)  
-- select：数组存储fd，轮询
+- select：数组存储fd，轮询，打开FD数量有限1024
 - poll：链表存储，轮询。**没有最大文件描述符数量的限制**
 - select和poll缺点：
     - 每次调用select，都需要把**fd集合从用户态拷贝到内核态**，开销大
@@ -37,7 +37,7 @@
     - 对于第一个缺点，epoll的解决方案在epoll_ctl函数中。每次注册新的事件到epoll句柄中时（在epoll_ctl中指定EPOLL_CTL_ADD），**会把所有的fd拷贝进内核，而不是在epoll_wait的时候重复拷贝**。epoll保证了每个fd在整个过程中只会拷贝一次。
     - 对于第二个缺点，epoll的解决方案不像select或poll一样每次都把current进程轮流加入fd对应的设备等待队列中，而只在epoll_ctl时把current挂一遍（这一遍必不可少）**并为每个fd指定一个回调函数**，当设备就绪，唤醒等待队列上的等待者时，就会调用这个回调函数，**而这个回调函数会把就绪的fd加入一个就绪链表**）。epoll_wait的工作实际上就是在这个就绪链表中查看有没有就绪的fd（利用schedule_timeout()实现睡一会，判断一会的效果，和select实现中的第7步是类似的）。
 - 总结：
-    1. select，poll实现需要自己不断轮询所有fd集合，直到设备就绪，期间可能要睡眠和唤醒多次交替。而epoll其实也需要调用epoll_wait不断轮询就绪链表，期间也可能多次睡眠和唤醒交替，但是它是**设备就绪时，调用回调函数，把就绪fd放入就绪链表**中，并唤醒在epoll_wait中进入睡眠的进程。虽然都要睡眠和交替，**但是select和poll在“醒着”的时候要遍历整个fd集合，而epoll在“醒着”的时候只要判断一下就绪链表是否为空就行了**，这节省了大量的CPU时间。这就是回调机制带来的性能提升。
+    1. select，poll实现需要自己不断轮询所有fd集合，直到设备就绪，期间可能要睡眠和唤醒多次交替。而epoll其实也需要调用epoll_wait不断轮询就绪链表，期间也可能多次睡眠和唤醒交替，但是它是**设备就绪时，调用回调函数，把就绪fd放入就绪链表**中，并唤醒在epoll_wait中进入睡眠的进程。虽然都要睡眠和交替，**但是select和poll在“醒着”的时候要遍历整个fd集合，而epoll在“醒着”的时候只要判断一下就绪链表是否为空就行了**，这节省了大量的CPU时间。这就是回调机制带来的性能提升。**伪AIO**
     2. select，poll每次调用都要把fd集合从用户态往内核态拷贝一次，并且要把current往设备等待队列中挂一次，而epoll只要一次拷贝，而且把current往等待队列上挂也只挂一次（在epoll_wait的开始，注意这里的等待队列并不是设备等待队列，只是一个epoll内部定义的等待队列）。这也能节省不少的开销。 
 # 4 零拷贝技术
 [深入剖析Linux IO原理和几种零拷贝机制的实现](https://zhuanlan.zhihu.com/p/83398714)
@@ -80,7 +80,7 @@
 - 代码  
 [Reactor I/O模型](https://www.xncoding.com/2018/04/05/java/reactor.html)
 - 总结：
-
+reactor多线程和主从reactor多线程的主要区别是：从reacor是一个select线程，有自己的selector
 # 6 AIO
 AsynchronousServerSocketChannel
 - windows：IOCP
