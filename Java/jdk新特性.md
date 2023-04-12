@@ -13,7 +13,7 @@
 [标准版Oracle JDK 9中的新功能](https://my.oschina.net/gemron/blog/1541837)
 - 模块化
 - G1默认
-- 同一JVMlog：-Xlogg
+- 统一JVMlog：-Xlogg
 - Jshell
 - 集合of方法
 # 3 JDK10

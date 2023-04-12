@@ -1,18 +1,18 @@
 <!-- TOC -->
 
-- [1.内存区域](#1内存区域)
-    - [1.1线程私有](#11线程私有)
-    - [1.2共享](#12共享)
+- [1. 内存区域](#1-内存区域)
+    - [1.1 线程私有](#11-线程私有)
+    - [1.2 共享](#12-共享)
         - [1.2.1 堆：存储对象实例和数组](#121-堆存储对象实例和数组)
         - [1.2.2 方法区（逻辑区域）：类信息、常量、静态变量、即时编译器编译后的代码](#122-方法区逻辑区域类信息常量静态变量即时编译器编译后的代码)
         - [1.2.3 运行时常量池Runtime Constant Pool](#123-运行时常量池runtime-constant-pool)
         - [1.2.4 直接内存](#124-直接内存)
-- [2.虚拟机对象？](#2虚拟机对象)
-- [3.垃圾收集](#3垃圾收集)
-    - [3.1确定对象是否死亡](#31确定对象是否死亡)
-    - [3.2垃圾收集算法](#32垃圾收集算法)
-    - [3.3算法实现](#33算法实现)
-    - [3.4垃圾收集器](#34垃圾收集器)
+- [2. 虚拟机对象？](#2-虚拟机对象)
+- [3. 垃圾收集](#3-垃圾收集)
+    - [3.1 确定对象是否死亡](#31-确定对象是否死亡)
+    - [3.2 垃圾收集算法](#32-垃圾收集算法)
+    - [3.3 算法实现](#33-算法实现)
+    - [3.4 垃圾收集器](#34-垃圾收集器)
     - [**3.5 G1**](#35-g1)
         - [3.5.1 设计目标](#351-设计目标)
         - [3.5.2 重要概念](#352-重要概念)
@@ -22,23 +22,24 @@
         - [3.5.6 G1参数](#356-g1参数)
     - [3.6 ZGC](#36-zgc)
     - [3.7 内存分配回收策略](#37-内存分配回收策略)
+    - [3.8 minor、old、full](#38-minoroldfull)
 - [4 性能监控与故障处理工具](#4-性能监控与故障处理工具)
-- [5类文件结构](#5类文件结构)
+- [5 类文件结构](#5-类文件结构)
     - [5.1 组成](#51-组成)
     - [5.2 各种常量池总结？](#52-各种常量池总结)
     - [5.3 创建了几个对象？](#53-创建了几个对象)
-- [6.字节码指令？](#6字节码指令)
-- [7.类加载机制](#7类加载机制)
-    - [7.1类加载时机？](#71类加载时机)
-    - [7.2类加载过程？](#72类加载过程)
-    - [7.3类加载器](#73类加载器)
-- [8.虚拟机字节码执行引擎](#8虚拟机字节码执行引擎)
-    - [8.1运行时栈帧](#81运行时栈帧)
-    - [8.2方法调用](#82方法调用)
-    - [8.3基于栈的字节码执行引擎](#83基于栈的字节码执行引擎)
-- [9编译与代码优化](#9编译与代码优化)
-    - [9.1编译期优化](#91编译期优化)
-    - [9.2运行期优化](#92运行期优化)
+- [6. 字节码指令？](#6-字节码指令)
+- [7. 类加载机制](#7-类加载机制)
+    - [7.1 类加载时机？](#71-类加载时机)
+    - [7.2 类加载过程？](#72-类加载过程)
+    - [7.3 类加载器](#73-类加载器)
+- [8. 虚拟机字节码执行引擎](#8-虚拟机字节码执行引擎)
+    - [8.1 运行时栈帧](#81-运行时栈帧)
+    - [8.2 方法调用](#82-方法调用)
+    - [8.3 基于栈的字节码执行引擎](#83-基于栈的字节码执行引擎)
+- [9 编译与代码优化](#9-编译与代码优化)
+    - [9.1 编译期优化](#91-编译期优化)
+    - [9.2 运行期优化](#92-运行期优化)
 - [10 GameOcpa参数](#10-gameocpa参数)
 
 <!-- /TOC -->
@@ -70,6 +71,8 @@
             - 调整 PC 计数器的值，以指向方法调用指令后面的一条指令
 ## 1.2共享
 ### 1.2.1 堆：存储对象实例和数组
+[聊聊HotSpot VM的Native Memory Tracking](https://cloud.tencent.com/developer/article/1406522)
+![](../picture/Java/JVM/%E5%86%85%E5%AD%98.jpeg)
 - -XMS、-Xmx
 ### 1.2.2 方法区（逻辑区域）：类信息、常量、静态变量、即时编译器编译后的代码
 - 永久代：Full GC
@@ -77,13 +80,13 @@
         - 符号引用(Symbols Reference)->native
         - 字面量(interned strings)->堆
         - 静态变量(class statics)->堆（class对象中末尾）
-        - SymbolTable / StringTable，在native memory里。JDK7是把SymbolTable引用的Symbol移动到了native memory，而StringTable引用的java.lang.String实例则从PermGen移动到了普通Java heap
+        - SymbolTable / StringTable，在native memory里。JDK7是把SymbolTable引用的Symbol移动到了native memory，而**StringTable引用的java.lang.String实例则从PermGen移动到了普通Java heap**。([string#intern](https://tech.meituan.com/2014/03/06/in-depth-understanding-string-intern.html)）
 - 为什么用元数据区替代方法区？
-    - 更容易遇到内存溢出的问题（永久代有-XX：MaxPermSize的上限，即使不设置也有默认大小，而J9和JRockit只要没有触碰到进程可用内存的上限）
+    - 更容易遇到内存溢出的问题（永久代有-XX：MaxPermSize的上限，即使不设置也有默认大小，**无法根据实际需求进行动态调整，导致OOM**，而J9和JRockit只要没有触碰到进程可用内存的上限）
     - 要把JRockit中的优秀功能移植到HotSpot虚拟机时，因为两者对方法区实现的差异而面临诸多困难
     - interned-strings存储在永久代，会导致大量的性能问题和OOM错误    
-- 元数据区（使用本地内存）
-    - Klass MetaSpace：Class 文件在 JVM 里的运行时数据结构
+- 元数据区[深入理解 Metaspace](https://www.javadoop.com/post/metaspace)
+    - Klass MetaSpace：Class 文件在 JVM 里的运行时数据结构[HotSpot VM类模型之InstanceKlass](https://www.cnblogs.com/mazhimazhi/p/14014628.html)
     - NoKlass MetaSpace：Klass 相关的其他的内容，**Runtime Constant Pool**
     - 参数
         - -XX:MetaspaceSize，初始空间大小，达到该值就会触发垃圾收集进行类型卸载，同时GC会对该值进行调整：如果释放了大量的空间，就适当降低该值；如果释放了很少的空间，那么在不超过MaxMetaspaceSize时，适当提高该值。
@@ -97,6 +100,7 @@
 - class文件常量池在运行时的数据结构（class文件有的它全都有，但是需要解析，参考[关于常量池中的String](https://zhuanlan.zhihu.com/p/51655449)）。
 - 方法区的一部分（1.7存在永久代，1.8存在元数据区），**每个类一个**
 - 其中的引用类型常量（例如CONSTANT_String、CONSTANT_Class、CONSTANT_MethodHandle、CONSTANT_MethodType之类）都存的是**引用**。
+- 字面量和符号引用
 ### 1.2.4 直接内存
 - 作用
     - 减轻垃圾收集器的压力
@@ -119,7 +123,7 @@
         } 
     }
     ```
-- gc过程中如果发现某个对象只有PhantomReference引用，在gc完毕的时候会回调Cleaner.clean()，在clean方法中回调Deallocator的run方法(见"引用分类")
+- gc过程中如果发现某个对象只有PhantomReference引用，在gc完毕的时候processPendingReferences()会回调Cleaner.clean()，在clean方法中回调Deallocator的run方法(见"引用分类")
 # 2.虚拟机对象？
 - 创建
     - 加载  
@@ -140,6 +144,8 @@
     - 对象头
         - Markword  
         ![](../picture/Java/JVM/MarkWord.png)
+        
+        ![](./pic/%E5%B9%B6%E5%8F%91/7-markword.png)
         - 类型指针  
         对象指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象是那个类的实例
     - 实例数据  
@@ -152,7 +158,13 @@
 缺点：很难解决循环引用
 - 可达性分析算法
     - GC roots  
-    ![](../picture/Java/JVM/GCRoots.png)
+      - Thread 活着的线程
+      - Stack Local 虚拟机栈应用的对象
+      - JNI Local 本地方法栈引用的对象
+      - Monitor Used - 用于同步的监控对象
+      - Held by JVM - 用于JVM特殊目的由GC保留的对象，但实际上这个与JVM的实现是有关的。可能已知的一些类型是：**系统类加载器**、一些JVM知道的重要的**异常类**
+      - 卡表
+      - ![](../picture/Java/JVM/GCRoots.png)
 - 引用分类  
 ![](../picture/Java/JVM/引用类型.png)
 - 对象死亡过程与拯救    
@@ -203,9 +215,10 @@
 - 安全区域
     - 程序不执行时（未分配CPU时间，sleep或blocked），无法执行至安全点
     - 安全区域指能确保在某一段代码片段之中，引用关系不发生变化。可以看作是延伸的安全点
-- 记忆集和卡表  
-    - 为解决对象跨代引用所带来的问题，垃圾收集器在**新生代**中建立了名为记忆集（Remembered Set）的数据结构，用以**避免把整个老年代加进GC Roots扫描范围**。
-    - 由于在进行YoungGC时，我们在进行对一个对象是否被引用的过程，需要扫描整个Old区，所以JVM设计了CardTable，将Old区分为一个一个Card，一个Card有多个对象；如果一个Card中的对象有引用指向Young区，则将其标记为Dirty Card，下次需要进行YoungGC时，只需要去扫描Dirty Card即可。
+- 记忆集和卡表 [为什么跨代引用是GC roots](https://www.jianshu.com/p/671495682e46) 
+    - >A generational tracing collector starts from the root set, but does not traverse references that lead to objects in the older generation（新生代收集从root遍历时，遍历到老年代会停止） https://www.zhihu.com/question/389362829/answer/1235454900 
+    - 为解决对象跨代引用所带来的问题，垃圾收集器在**新生代**中建立了名为记忆集（Remembered Set）的数据结构，用以**避免把整个老年代加进引用链扫描范围**。
+    - JVM设计了CardTable，将Old区分为一个一个Card，一个Card有多个对象；如果一个Card中的对象有引用指向Young区，则将其标记为Dirty Card，下次需要进行YoungGC时，只需要去扫描Dirty Card即可。
 - 写屏障  
 通过写屏障维护卡表状态，写屏障可以看作在虚拟机层面对“引用类型字段赋值”这个动作的AOP切面
 - 并发可达性分析（三色标记法）  
@@ -241,6 +254,7 @@
             执行n次不压缩的Full GC后，执行一次压缩的
 ## **3.5 G1**
 [Java Hotspot G1 GC的一些关键技术](https://tech.meituan.com/2016/09/23/g1.html)
+
 [JVM G1（Garbage-First Garbage Collector）收集器全过程剖析](https://segmentfault.com/a/1190000022537037)
 ### 3.5.1 设计目标  
 G1是一种服务器端的垃圾收集器，应用在多处理器和大容量内存环境中，**在实现高吞吐量的同时，尽可能的满足垃圾收集暂停时间的要求**。G1收集器的设计目标是取代CMS收集器，它**同CMS相比**，在以下方面表现的更出色：
@@ -302,7 +316,7 @@ G1是一种服务器端的垃圾收集器，应用在多处理器和大容量内
 - global concurrent marking  
     |Phase|Description|
     |-|-|
-    |(1)Initial Mark(STW)|其实是**Young GC的一部分**，在Young GC时标记GC ROOTS 直接可达的对象，Young GC 完成后存活对象只存在于Surviror|
+    |(1)Initial Mark(STW)|其实是**Young GC的一部分(等待下次)**，在Young GC时标记GC ROOTS 直接可达的对象，Young GC 完成后存活对象只存在于Surviror|
     |(2)Root Region Scanning(并发)|在initial mark的**新生代survivor区扫描对老年代的引用，作为 Root Region**（因为Eden区已经清空了），并标记被引用的对象。该阶段与应用程序同时运行，并且只有完成该阶段后，才能开始下一次 STW 年轻代垃圾回收|
     |(3)Concurrent Marking|可达性分析。**可以被 STW 年轻代垃圾回收中断**，默认-XX:ParallelGCThreads/4|
     |(4)Remark(STW)|使用SATB完成标记|
@@ -328,7 +342,7 @@ G1是一种服务器端的垃圾收集器，应用在多处理器和大容量内
 - -XX:G1HeapWastePercent：允许的浪费堆空间的占比，默认是5%。如果并发标记可回收的空间小于5%，则不会触发MixedGC
 - -XX:G1MixedGCCountTarget：当占用内存超过InitiatingHeapOccupancyPercent阈值时, 最多通过多少次Mixed GC来将内存控制在阀值之下。默认值是8
 - 参数建议
-    - 年轻代大小：**避免**使用 -Xmn 选项或 -XX:NewRatio 等其他相关选项显式设置年轻代大小。固定年轻代的大小会覆盖MaxGCPauseMillis目标。
+    - 年轻代大小：**避免**使用 -Xmn 选项或 -XX:NewRatio 等其他相关选项显式设置**固定年轻代大小**。固定年轻代的大小会覆盖MaxGCPauseMillis目标。
     - MaxGCPauseMillis：G1 GC 的吞吐量目标是 **90% 的应用程序时间和 10%的垃圾回收时间**。如果将其与 Java HotSpot VM 的吞吐量回收器相比较，目标则是 99% 的应用程序时间和 1% 的垃圾回收时间。因此，当您评估 G1 GC 的吞吐量时，暂停时间目标不要太严苛。目标太过严苛表示您愿意承受更多的垃圾回收开销，而这会**直接影响到吞吐量**。当您评估 G1 GC 的延迟时，请设置所需的（软）实时目标，G1 GC 会尽量满足。副作用是，吞吐量可能会受到影响。
 
 ## 3.6 ZGC  
@@ -341,6 +355,29 @@ G1是一种服务器端的垃圾收集器，应用在多处理器和大容量内
 - 空间分配担保  
     在发生Minor GC之前，虚拟机会检测: 老年代最大可用的连续空间>新生代所有对象总空间或历次晋升的平均大小。小于则Full GC
 
+## 3.8 minor、old、full
+针对HotSpot VM的实现，它里面的GC其实准确分类只有两大种：
+- Partial GC：并不收集整个GC堆的模式
+   - Young GC：只收集young gen的GC
+   - Old GC：只收集old gen的GC。只有CMS的concurrent collection是这个模式
+   - Mixed GC：收集整个young gen以及部分old gen的GC。只有G1有这个模式
+ - Full GC：收集整个堆，包括young gen、old gen、perm gen（如果存在的话）等所有部分的模式。
+    
+Major GC通常是跟full GC是等价的，收集整个GC堆。但因为HotSpot VM发展了这么多年，外界对各种名词的解读已经完全混乱了，当有人说“major GC”的时候一定要问清楚他想要指的是上面的full GC还是old GC。
+最简单的分代式GC策略，按HotSpot VM的serial GC的实现来看，触发条件是：
+- young GC：当young gen中的eden区分配满的时候触发。注意young GC中有部分存活对象会晋升到old gen，所以young GC后old gen的占用量通常会有所升高。
+- full GC：
+    - 当准备要触发一次young GC时，如果发现统计数据说之前young GC的平均晋升大小比目前old gen剩余的空间大，则不会触发young GC而是转为触发full GC（因为HotSpot VM的GC里，除了CMS的concurrent collection之外，其它能收集old gen的GC都会同时收集整个GC堆，包括young gen，所以不需要事先触发一次单独的young GC）；
+    - 或者，如果有perm gen的话，要在perm gen分配空间但已经没有足够空间时，也要触发一次full GC；
+    - 或者System.gc()、heap dump带GC，默认也是触发full GC。 
+  
+HotSpot VM里其它非并发GC的触发条件复杂一些，不过大致的原理与上面说的其实一样。 
+   
+当然也总有例外。Parallel Scavenge（-XX:+UseParallelGC）框架下，默认是在要触发full GC前先执行一次young GC，并且两次GC之间能让应用程序稍微运行一小下，以期降低full GC的暂停时间（因为young GC会尽量清理了young gen的死对象，减少了full GC的工作量）。控制这个行为的VM参数是-XX:+ScavengeBeforeFullGC。这是HotSpot VM里的奇葩嗯。可跳传送门围观：
+
+[JVM full GC的奇怪现象，求解惑？ - RednaxelaFX 的回答]()
+
+并发GC的触发条件就不太一样。以CMS GC为例，它主要是定时去检查old gen的使用量，当使用量超过了触发比例就会启动一次CMS GC，对old gen做并发收集。
 # 4 性能监控与故障处理工具
 [虚拟机性能监控与故障处理工具](https://blog.csdn.net/zhangzhaoyuan30/article/details/89644918)
 - jps
@@ -371,7 +408,7 @@ G1是一种服务器端的垃圾收集器，应用在多处理器和大容量内
         - 字段、方法的名称和描述符
 - 访问标志
 - 类索引、父类索引、接口索引
-- 字段表、方发表、属性表
+- 字段表、方法表、属性表
     - 包含
         - 访问标志
         - 名称索引
@@ -502,7 +539,7 @@ String s1 = new String("aaa");
     }
     ```
     - 三次破坏
-        - 1.2之前没有双亲委派模型，1.2之后为了兼容添加了一个findClass方法
+        - 1.2之前没有双亲委派模型，1.2之后为了兼容添加了一个findClass方法（以前是重写loadClass）
         - JNDI  
         加载类D的类加载器Dload，在解析过程中，如果要将D中符号引用N解析为类或者接口C的直接引用，C又未被类加载器加载，那么使用Dload对C进行加载。然而由于JDNI是使用启动类加载器加载的，而JNDI类中符号引用代表的类是第三方的代码，所以无法使用启动类加载器进行加载，所以需要调用应用程序类加载器加载  
         例如：  
@@ -603,7 +640,7 @@ String s1 = new String("aaa");
         - 方法内联
             >编译器将指定的函数体插入并取代每一处调用该函数的地方（上下文），从而节省了每次调用函数带来的额外时间开支。  
         - 逃逸分析：方法内部定义的对象被其他方法应用，称为方法逃逸。如果被其他线程访问，称为线程逃逸
-            - 栈上分配：减少GC压力，可能被分配到告诉寄存器存储
+            - 栈上分配：减少GC压力，可能被分配到高速寄存器存储
             - 同步消除：如果不会发生线程逃逸
             - 标量替换
                 - 标量（Scalar）：不可进一步分解的数据，比如基本数据类型，否则称为聚合量

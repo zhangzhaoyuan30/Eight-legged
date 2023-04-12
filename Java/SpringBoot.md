@@ -8,8 +8,11 @@
         - [3.1.2 SpringApplicationBuilder](#312-springapplicationbuilder)
     - [3.2 run()](#32-run)
         - [3.2.1 获取run方法的监听器EventPublishingRunListener](#321-获取run方法的监听器eventpublishingrunlistener)
+        - [3.2.1 获取run方法的监听器EventPublishingRunListener](#321-获取run方法的监听器eventpublishingrunlistener)
+        - [3.2.2 准备环境：prepareEnvironment()](#322-准备环境prepareenvironment)
         - [3.2.2 准备环境：prepareEnvironment()](#322-准备环境prepareenvironment)
         - [3.2.3 **创建容器**：createApplicationContext()](#323-创建容器createapplicationcontext)
+        - [3.2.4 获取SpringBootExceptionReporter](#324-获取springbootexceptionreporter)
         - [3.2.4 获取SpringBootExceptionReporter](#324-获取springbootexceptionreporter)
         - [3.2.5 准备容器prepareContext()](#325-准备容器preparecontext)
         - [3.2.6 refresh](#326-refresh)
@@ -19,6 +22,7 @@
     - [4.2 加载自动配置类](#42-加载自动配置类)
     - [4.3 过滤自动配置类](#43-过滤自动配置类)
 - [5 自定义Starter](#5-自定义starter)
+    - [5.1 spring.factories](#51-springfactories)
 - [6 Tomcat启动？](#6-tomcat启动)
 
 <!-- /TOC -->
@@ -280,12 +284,15 @@ protected List<AutoConfigurationImportFilter> getAutoConfigurationImportFilters(
 # 5 自定义Starter
 1. 定义一个Configuration
 2. 加上条件注解
-3. 在META-INF下面创建 spring.factories添加
+3. 在META-INF下面创建 spring.factories(如果你想要被 Spring 容器管理的 bean 不在 Spring Boot 包扫描路径下)添加
     ```properties
     org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
     spring.study.startup.bean.MyAutoConfiguration
     ```
 4. 打包
-
+## 5.1 spring.factories
+如果你想要被 Spring 容器管理的 bean 不在 Spring Boot 包扫描路径下
+> 简单的总结下 java SPI 机制的思想。我们系统里抽象的各个模块，往往有很多不同的实现方案，比如日志模块的方案，xml解析模块、jdbc模块的方案等。面向的对象的设计里，我们一般推荐模块之间基于接口编程，模块之间不对实现类进行硬编码。一旦代码里涉及具体的实现类，就违反了可拔插的原则，如果需要替换一种实现，就需要修改代码。为了实现在模块装配的时候能不在程序里动态指明，这就需要一种服务发现机制。    
+java SPI 就是提供这样的一个机制：为某个接口寻找服务实现的机制。有点类似IOC的思想，就是将装配的控制权移到程序之外，在模块化设计中这个机制尤其重要。
 # 6 Tomcat启动？
 ServletWebServerApplicationContext的onfresh方法

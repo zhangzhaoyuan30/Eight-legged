@@ -17,7 +17,7 @@
 - [6 服务层](#6-服务层)
     - [6.1 阻塞](#61-阻塞)
     - [6.2 非阻塞](#62-非阻塞)
-    - [6.3 FrameBuffer](#63-framebuffer)
+    - [**6.3FrameBuffer**](#63framebuffer)
 - [7 IDL文件](#7-idl文件)
 - [8 在公司的使用](#8-在公司的使用)
     - [8.1 服务端](#81-服务端)
@@ -244,12 +244,52 @@ IDL生成生成的客户端写参数的方法和服务端读参数的方法一�
 多Reactor多线程：
     - 采用了一个**AcceptorThread**来Accept，将SocketChannel放到**SelectorThread**的阻塞队列**acceptedQueue**中
     - 每个SelectorThread绑定一个Selector，从acceptedQueue中拿新创建好的SocketChannel，注册到selector中，后续再处理读写事件和方法调用（可以在SelectorThread本线程中，也可以在线程池中）
-## 6.3FrameBuffer
+## **6.3FrameBuffer**
 [Thrift源码分析（五）-- FrameBuffer类分析](https://blog.csdn.net/ITer_ZC/article/details/39694129)
 - 通过SelectionKey.attachment()与key绑定，并将key作为成员变量
 - 维护了一个FrameBufferState表示读写和方法调用的状态，并且根据此状态修改SelectionKey的读写状态
-- 拥有read()和write()进行真正的IO读写，写入一个自身维护的buffer
-- invoke()方法中会调用processor的process方法，在read()方法读完时会进行调用
+- 在读事件来时，获取key attach的frameBuffer，读完之后，调用invoke()方法，invoke()中会调用processor的process方法。方法调用完成后注册写事件。
+```java
+protected void handleRead(SelectionKey key) {
+    FrameBuffer buffer = (FrameBuffer) key.attachment();
+    if (!buffer.read()) {
+    cleanupSelectionKey(key);
+    return;
+    }
+
+    // if the buffer's frame read is complete, invoke the method.
+    if (buffer.isFrameFullyRead()) {
+    if (!requestInvoke(buffer)) {
+        cleanupSelectionKey(key);
+    }
+    }
+}
+
+protected boolean requestInvoke(FrameBuffer frameBuffer) {
+    frameBuffer.invoke();
+    return true;
+}
+
+public void invoke() {
+      TTransport inTrans = getInputTransport();
+      TProtocol inProt = inputProtocolFactory_.getProtocol(inTrans);
+      TProtocol outProt = outputProtocolFactory_.getProtocol(getOutputTransport());
+ 
+      try {
+        processorFactory_.getProcessor(inTrans).process(inProt, outProt);
+        responseReady();
+        return;
+      } catch (TException te) {
+        LOGGER.warn("Exception while invoking!", te);
+      } catch (Throwable t) {
+        LOGGER.error("Unexpected throwable while invoking!", t);
+      }
+      // This will only be reached when there is a throwable.
+      state_ = FrameBufferState.AWAITING_CLOSE;
+      requestSelectInterestChange();
+}
+```
+- [Thrift源码分析（四）-- 方法调用模型分析](https://blog.csdn.net/iter_zc/article/details/39692951)
 # 7IDL文件
 - namespace　定义包名
 - struct　定义服务接口的**参数、返回值使用到的类结构**。如果接口的参数都是基本类型，则不需要定义struct

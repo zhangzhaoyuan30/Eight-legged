@@ -17,6 +17,8 @@
     - [11.2 服务端处理请求](#112-服务端处理请求)
         - [11.2.1 accept](#1121-accept)
         - [11.2.2 read](#1122-read)
+- [12 客户端猜测实现（todo）](#12-客户端猜测实现todo)
+- [13 连接池](#13-连接池)
 
 <!-- /TOC -->
 ---
@@ -87,7 +89,7 @@ Server端我们能接触到API包括：
 
 # 6 Client线程模型
 1. Caller线程：业务当前线程
- Worker线程（grpc-default-executor）：请求处理与响应回调线程
+2. Worker线程（grpc-default-executor）：请求处理与响应回调线程
 3. IO线程（grpc-nio-worker-ELG）：使用Netty的ELG
 
 以futureClient为例，一次client请求的线程切换如下图：
@@ -98,14 +100,14 @@ Server端我们能接触到API包括：
  创建Stream，代表发起一次请求，在Caller Thread完成
 3. 发送Header，将Header Frame投递到WriteQueue，Call Thread完成，ELG异步消费WriteQueue
 4. 发送Message，将Message Frame投递到WriteQueue，Call Thread完成，ELG异步消费WriteQueue
-5. 接收Header，这里完成一次从ELG -> Worker线程池的切换，需要注意的是如果创建Client时我们指定了directExecutor模式，那么将统一由ELG线程完成
+5. 接收Header，这里完成一次从ELG -> Worker线程池的切换，**需要注意的是如果创建Client时我们指定了directExecutor模式，那么将统一由ELG线程完成**
 6. 接收Message，这里完成一次从ELG -> Worker线程池的切换，需要注意的是如果创建Client时我们指定了directExecutor模式，那么将统一由ELG线程完成
 7. 接收关闭Stream请求，线程切换同5，6，最终会回调Future的set方法
 8. Caller Thread通过Future.get获取到结果
 
 # 7 server 线程模型
 1. Worker线程（grpc-default-executor）：Server启动时候指定
- IO线程（grpc-nio-worker-ELG）：使用Netty的ELG
+2. IO线程（grpc-nio-worker-ELG）：使用Netty的ELG
 
 ![](./pic/krpc/8-server-netty)
 
@@ -130,9 +132,9 @@ Server端我们能接触到API包括：
 
 SQL QPI是不是流式rpc
 # 10 客户端类型
-1 异步
-2 阻塞
-3 Future
+1. 异步：Stub
+2. 阻塞：BlockingStub
+3. FutureStub
 
 # 11 源码
 ## 11.1 启动
@@ -338,3 +340,9 @@ io.grpc.netty.shaded.io.netty.handler.codec.http2.DefaultHttp2Connection#stream 
     3. 3-7
 6. 在收到http2的header帧时调用NettyServerHandler的OnHeadersRead方法，调用ServerTransportListener(实现为ServerTransportListenerImpl)接口的streamCreated方法构建NettyServerStream。
 7. 在 NettyServerHandler.onDataRead时会进行方法调用 io.grpc.stub.ServerCalls.UnaryServerCallHandler.UnaryServerCallListener#onHalfClose
+
+# 12 客户端猜测实现（todo）
+注册写事件，创建stream，绑定在key上，写入队列，注册写事件。写完注册读事件，读事件回调结果写到future。future提前返回。
+
+# 13 连接池
+因为grpc利用http2做多路复用，理论上不需要像thrift那样创建连接池并保证同一时刻socket只能有一个请求（client线程不安全）

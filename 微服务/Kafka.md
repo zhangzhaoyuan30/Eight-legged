@@ -3,13 +3,13 @@
 - [1 生产者使用？](#1-生产者使用)
     - [1.1 发同步or异步、异常重试？](#11-发同步or异步异常重试)
     - [1.2 分区器](#12-分区器)
-    - [1.3 重要参数](#13-重要参数)
-    - [1.4 **如何保证发送有序**](#14-如何保证发送有序)
+    - [1.3 **重要参数**](#13-重要参数)
+    - [1.4 如何保证发送有序（消息重试对顺序消息的影响，一般不问这个）](#14-如何保证发送有序消息重试对顺序消息的影响一般不问这个)
 - [2 消费者](#2-消费者)
     - [2.1 订阅主题和分区](#21-订阅主题和分区)
-    - [2.2 **位移提交**](#22-位移提交)
+    - [2.2 位移提交](#22-位移提交)
     - [2.3 指定位移消费](#23-指定位移消费)
-    - [2.4 **再均衡**](#24-再均衡)
+    - [2.4 再均衡](#24-再均衡)
     - [2.5 多线程消费](#25-多线程消费)
     - [2.6 消费者参数](#26-消费者参数)
 - [3 主题与分区](#3-主题与分区)
@@ -31,10 +31,11 @@
     - [6.2 功能](#62-功能)
 - [7 消费者分区分配？](#7-消费者分区分配)
 - [8 Rebalance](#8-rebalance)
-    - [8.1 FIND_COORDINATOR](#81-find_coordinator)
-    - [8.2 JOIN_GROUP](#82-join_group)
-    - [8.3 SYNC_GROUP](#83-sync_group)
-    - [8.4 HEARTBEAT(避免不必要的rebalance)](#84-heartbeat避免不必要的rebalance)
+    - [8.1 FINDCOORDINATOR](#81-findcoordinator)
+    - [8.1 过程](#81-过程)
+    - [8.2 HEARTBEAT(避免不必要的rebalance)](#82-heartbeat避免不必要的rebalance)
+    - [8.3 协议缺点](#83-协议缺点)
+    - [8.4 Cooperative协议流程](#84-cooperative协议流程)
 - [9 **消息交付语义**](#9-消息交付语义)
     - [9.1 生产者](#91-生产者)
         - [9.1.1 幂等实现原理](#911-幂等实现原理)
@@ -42,7 +43,7 @@
     - [9.3 Kafka交付语义总结](#93-kafka交付语义总结)
 - [10 Kafka事务？](#10-kafka事务)
     - [10.1 事务性消息传递和flink？](#101-事务性消息传递和flink)
-- [11 Kafka如何保证可靠性？](#11-kafka如何保证可靠性)
+- [11 **Kafka如何保证可靠性？**](#11-kafka如何保证可靠性)
     - [11.1 **副本机制**](#111-副本机制)
         - [11.1.1 leader和follower](#1111-leader和follower)
         - [11.1.2 AR和ISR](#1112-ar和isr)
@@ -54,6 +55,10 @@
     - [11.3 **提高可靠性的配置**](#113-提高可靠性的配置)
     - [11.4 Kafka为什么不采用读写分离？](#114-kafka为什么不采用读写分离)
 - [12 消息中间件选型？](#12-消息中间件选型)
+- [13 **kafka顺序**](#13-kafka顺序)
+    - [13.1 producer配置（消息重试对顺序消息的影响）：](#131-producer配置消息重试对顺序消息的影响)
+    - [13.2 全局有序](#132-全局有序)
+    - [13.3 局部有序](#133-局部有序)
 
 <!-- /TOC -->
 # 1 生产者使用？
@@ -71,7 +76,7 @@
 - 指定Partition字段，就不需要分区器
 - 默认hash，若key为null则**轮询**
 - 一旦增加分区，无法保证映射关系
-## 1.3 重要参数
+## 1.3 **重要参数**
 - acks：消息的可靠性和吞吐量的权衡
     - 0：不需要等待服务端响应，此时retries无效
     - 1：leader写入成功(默认)
@@ -81,7 +86,7 @@
 - uploadLog
     - acks=1
     - retries=0
-## 1.4 **如何保证发送有序**
+## 1.4 如何保证发送有序（消息重试对顺序消息的影响，一般不问这个）
 - retries=0
 - 或acks=0（retries无效）
 - 或retries>0 && max.in.flight.requests.per.connection=1  
@@ -92,7 +97,7 @@
 ## 2.1 订阅主题和分区
 - 订阅主题：**具有再均衡功能**，可注册再均衡监听器
 - 分区：assign(TopicPartion)，没有自动再均衡功能
-## 2.2 **位移提交**
+## 2.2 位移提交
 消费位移存储起来（持久化）的动作称为“提交”
 - 存储位置：旧消费者客户端：zk中，新：kafka的主题_consumer_offsets
 - 获取offset
@@ -117,7 +122,7 @@
 - latest（默认）,earliest,none（异常）
 - seek方法指定分区和offset：分区的分配是在poll()方法的调用过程中实现的，所以在执行seek()方法之前需要**先执行一次poll()方法**分配到分区
     - seekToBeginning（从分区起始位置消费）,seekToEnd,offsetsForTimes（指定时间消费）
-## 2.4 **再均衡**
+## 2.4 再均衡
 - 再均衡期间，**消费者组不可用**。且消费者当前状态会丢失（位移未提交），可能造成**重复消费，应该尽量避免**。
 - 可以在subscribe()注册再均衡监听器，同步提交位移
 ## 2.5 多线程消费
@@ -159,11 +164,11 @@ KafkaConsumer 非线程安全，实现原理是每个方法调用前执行acquir
 - 场景：集群扩容，broker节点失效时，Kafka并不会将分区副本自动迁移，而是需要手动执行kafka-reassign-partitions.sh
 - **分配算法和上面创建主题时的一致**，新副本会从leader副本同步数据，执行完重分配后需要**再执行优先副本选举**
 ## 3.4 分区数量确定
-- 目标吞吐是t，然后我们可以设置分区数量为max(t/p, t/c)，其中p和c分别为生产者和消费者的处理速度。
+- 创建一个只有1个分区的topic，然后测试这个topic的producer吞吐量和consumer吞吐量。假设它们的值分别是Tp和Tc，单位可以是MB/s。然后假设总的目标吞吐量是Tt，那么分区数 =  Tt / max(Tp, Tc)
 - 吞吐量除了和分区数量有关，还和这些因素相关：消息大小、消息压缩方式、消息发送方式(同步或异步)、消息确认类型acks、副本因子
 - 要求消息顺序性：分区数设为1
 - 并非越高越好：
-    - 进程支配的**文件描述符**有限，一个分区占用一个
+    - 在Kafka的broker中，每个partition都会对应磁盘文件系统的一个目录。在Kafka的数据日志文件目录中，每个日志数据段都会分配两个文件，一个索引文件和一个数据文件。当前版本的kafka，每个broker会为每个日志段文件打开一个index文件句柄和一个数据文件句柄。因此，随着partition的增多，所需要保持打开状态的文件句柄数也就越多，最终可能超过底层操作系统配置的文件句柄数量限制。
     - 降低高可用：分区在leader角色切换时不可用，如果集群中的某个**broker 节点宕机**，那么就会有大量的分区需要同时进行leader 选举，耗时长
 # 4 日志存储
 ## 4.1 目录和文件
@@ -171,13 +176,14 @@ KafkaConsumer 非线程安全，实现原理是每个方法调用前执行acquir
 - 文件夹：\<topic\>-\<partition\>
 - .log (LogSegment)：根据基准偏移量（ baseOffset ）命名
 ## 4.2 **日志索引和查询效率**
-- **稀疏索引**：Kafka 中的索引文件以稀疏索引（ sparse index ）的方式构造消息的索引，它**并不保证每个消息在索引文件中都有对应的索引项**。
+- **稀疏索引**：Kafka 中的索引文件以稀疏索引（ sparse index ）的方式构造消息的索引，它**并不保证每个消息在索引文件中都有对应的索引项**。这样可以避免索引文件占用过多的内存，从而可以在内存中保存更多的索引.
     >稀疏索引：每个存储块的每一个键对应的指针都指向每个数据块的第一条记录
 
     两个索引文件会在写入log.index.interval.bytes时增加索引项
 - **内存映射**：稀疏索引通过MappedByteBuffer 将索引文件映射到内存中，以加快索引的查询速度
 - **二分查找**
 ## 4.2.1 偏移量索引
+![](../picture/微服务/kafka/5-log.png)
 - 存储格式：
     - 相对偏移量relativeOffset：表示相对于baseOffset（文件名）的偏移量
     - 物理地址：position
@@ -217,11 +223,12 @@ KafkaConsumer 非线程安全，实现原理是每个方法调用前执行acquir
     - 对于大量使用页缓存的Kafka，应该**避免swap**，**vm.swappiness=1**(0表示关闭，最大100。设为1保留了swap 的机制而又最大限度地限制了它对Kafka 性能的影响)
         - >swap是把非活跃进程交换出内存
 ## 5.2 零拷贝
-见[零拷贝](../Java/IO.md#/t4/t零拷贝技术)
+见[零拷贝](../计算机基础/IO.md#/t4/t零拷贝技术)
 ## 5.3 **Kafka吞吐量总结**？
 - 分区：Partition 置于不同的磁盘上，从而实现磁盘间的并行处理，充分发挥多磁盘的优势
-- pagecache
-- 零拷贝  
+- pagecache：读写空中接力
+- 零拷贝
+- 顺序写
 # 6 控制器
 在Broker中选举其中一个作为控制器，负责管理集群中所有分区和副本的状态
 ## 6.1 控制器的选举
@@ -247,40 +254,58 @@ zk中创建/controllers节点
 # 8 Rebalance
 [Kafka Rebalance机制分析](https://www.cnblogs.com/yoke/p/11405397.html)
 ## 8.1 FIND_COORDINATOR
-消费者groupId 最终的**分区分配方案**及组内消费者所提交的**消费位移信息**都会发送给此分区leader 副本所在的broker 节点，
-让此broker 节点既扮演GroupCoordinator 的角色，又扮演保存分区分配方案和组内消费者位移的角色，这样可以省去很多不必要的中间轮转所带来的开销。
->Kafka在0.9之前是基于Zookeeper来存储Partition的Offset信息(consumers/{group}/offsets/{topic}/{partition})，**因为ZK并不适用于频繁的写操作**，所以在0.9之后通过内置Topic的方式来记录对应Partition的Offset
+Group Coordinator是一个服务，每个Broker在启动的时候都会启动一个该服务。Group Coordinator的作用是用来存储Group的相关Meta信息，并将对应Partition的Offset信息记录到Kafka内置Topic(__consumer_offsets)中。
+
+Kafka在0.9之前是基于Zookeeper来存储Partition的Offset信息(consumers/{group}/offsets/{topic}/{partition})，**但是ZK并不适用于频繁的写操作**。
+
+每个Group都会选择一个Coordinator来完成自己组内各Partition的Offset信息，选择的流程和规则如下：
 
 流程：
 1. 如果消费者还没有和GroupCoordinator建立连接，则向集群中某个节点发送FindCoordinatorRequest
 2. 根据groupId找到对应GroupCoordinator：
     ```java
     partition-Id = Math.abs(groupId.hashCode() % groupMetadataTopicPartitionCount)
-    ``` 
+    ```
+    规则： 
     - 计算GroupId对应在__consumer_offsets上的Partition
     - 根据对应的Partition寻找该**Partition的leader所对应的Broker**，该Broker上的GroupCoordinator即就是该Group的Coordinator
-## 8.2 JOIN_GROUP
-![](../picture/微服务/kafka/4-Rebalance-1.png)
-- 发送JoinGroupRequest
-所有concumer都向coordinator发送JoinGroup请求，请求加入消费组。一旦所有成员都发送了JoinGroup请求，coordinator会从中选择一个consumer担任leader的角色，并把组成员信息以及订阅信息发给leader。
-- leader选举：
-    - 如果没有leader，第一个加入的为leader
-    - 如果leader退出，利用hashMap的第一个key选举为leader。HashMap key为member_id，value为消费者原数据
-- 各个消费者投票选举分区分配策略   
-## 8.3 SYNC_GROUP
-这一步leader开始分配消费方案，即哪个consumer负责消费哪些topic的哪些partition。一旦完成分配，leader会将这个方案封装进**SyncGroupRequest**中发给coordinator，非leader也会发SyncGroupRequest，只是内容为空。
+    - 其中groupMetadataTopicPartitionCount对应offsets.topic.num.partitions参数值，默认值是50个分区
 
-**coordinator接收到分配方案之后会把方案塞进SyncGroup的response中发给各个consumer**。这样组内的所有成员就都知道自己应该消费哪些分区了。
-![](../picture/微服务/kafka/4-Rebalance-2.png)
-## 8.4 HEARTBEAT(避免不必要的rebalance)
+消费者最终的**分区分配方案**及组内消费者所提交的**消费位移信息**都会发送给此分区leader 副本所在的broker 节点，
+让此broker 节点既扮演GroupCoordinator 的角色，又扮演保存分区分配方案和组内消费者位移的角色，这样可以省去很多不必要的中间轮转所带来的开销。
+## 8.1 过程
+[Kafka 消费者 Rebalance 的性能优化](https://docs.qingque.cn/d/home/eZQDBBa5JXlPIfz5ZRXAQ_AO-?identityId=1vXRL1gK14O)
+1. 心跳失败、加入组、离开组。
+2. Coordinator 在发送心跳时就会告知每个 Consumer 需要发送一个 JoinGroup 请求来重新加入该 group。
+3. Consumer 需要立刻**放弃当前所订阅的所有 Partition**，并向 Coordinator 发送 JoinGroup 请求。从这个时刻开始，该 Consumer Group 中所有 Consumer 就**停止消费**，进入 stop-the-world 状态。
+4. Coordinator 端在收到组内所有 Consumer 的 JoinGroup 请求后，会选出一个 Leader Consumer，将组内所有 Consumer 的订阅策略以及一些元数据信息返回给该 Leader Consumer，由该 Leader Consumer 进行具体的分区分配，而不是在 Coordinator 端进行分配  
+分配方案的制定是在消费者leader端进行的，这有几个好处：
+    - 一个是策略发生变化时，只需要重启消费者即可，不需要重启整个Kafka集群
+    - 另外下放权力有利于用户在消费者侧实行一些自定义的分配策略，比如可以给某个消费者分配同一个机架上的分区减少网络延迟
+
+5. 所有的 Consumer 发送 SyncGroup 请求给 Coordinator，其中 Leader Consumer **会将自己分配好的所有分区方案包含在这一次请求中**，其它 Consumer 节点这次请求不包含实质性信息。
+6. Coordinator 将每个 Consumer 被分配到的分区元数据作为 SyncGroup 的 Response 返回给 Consumer
+
+## 8.2 HEARTBEAT(避免不必要的rebalance)
 - session.timeout.ms：心跳超时时间
 - heartbeat.interval.ms：**心跳频率，一般配置为小于超时时间1/3**
 - max.poll.interval.ms：两次调用 poll 方法的最大时间间隔，可以设置的大一点
+## 8.3 协议缺点
+Consumer Group 内所有 Consumer 从 Step2 发送 JoinGroup 请求开始便停止一切消费，直到 Step5 中 Coordinator 返回分区方案后才恢复正常消费。由于在这个过程中 Producer 仍在不断写入，在流量较大的情况下可能会导致严重的消息积压（Lag）。
+## 8.4 Cooperative协议流程
+同样地，消费组有新成员加入，触发了rebalance，然后消费者发送JoinGroup给coordinator
 
+但是和之前不同，这个请求里面会携带消费者自己目前负责的分区，并且不会放弃自己的分区，继续消费。coordinator会在给leader的响应中告知各成员的分区信息
+
+leader接收到消息之后，执行分配方案，并且通知**有变化的消费者**执行相关操作：消费者停止消费某些分区后触发一次rebalance，再把这些分区分配给新消费者
 # 9 **消息交付语义**
 ## 9.1 生产者
 - At most once：acks=0（会导致retries参数失效）
-- At least once（默认）：acks=1并且retries=Integer.MAX_VALUE
+- At least once（默认）：
+    - Producer 配置：acks=1并且retries=Integer.MAX_VALUE
+    - 服务端 Topic 配置
+        - topic 副本数量 = 4
+        - min.isr = 2
 - Exactly once：开启幂等（enable.idempotence设为true），同时，开启幂等不建议配置如下参数：
     - retries：必须大于0，default：Integer.MAX_VALUE
     - acks：必须-1
@@ -322,7 +347,7 @@ zk中创建/controllers节点
     - read committed
 ## 10.1 事务性消息传递和flink？
 
-# 11 Kafka如何保证可靠性？
+# 11 **Kafka如何保证可靠性？**
 ## 11.1 **副本机制**
 ### 11.1.1 leader和follower
 只有leader 副本对外提供服务，follower 副本只负责数据同步。只有位列ISR中的副本（ unclean.leader.election.enable 配置为false ）才有资格被选为新的leader。写入消息时只有等到所有**ISR 集合中的副本都确认收到之后才能被认为已经提交**，**消费者只能拉取到HW 之前的消息**。
@@ -390,3 +415,16 @@ zk中创建/controllers节点
 - 参考：  
     - [消息中间件选型方法论](./消息中间件选型方法论.pdf)
     - [消息中间件产品与选型简介](./消息中间件产品与选型简介.pdf)
+
+# 13 **kafka顺序**
+## 13.1 producer配置（消息重试对顺序消息的影响）：
+- retries>0 && max.in.flight.requests.per.connection=1  
+    > max.in.flight.requests.per.connection设为1：生产者在收到服务器响应之前可以发送多少个
+- 或开启幂等
+
+## 13.2 全局有序
+- 一个topic一个partition
+
+## 13.3 局部有序
+- 只需要在发消息的时候指定Partition Key，Kafka对其进行Hash计算，根据计算结果决定放入哪个Partition。这样Partition Key相同的消息会放在同一个Partition
+- 在不增加partition数量的情况下想提高消费速度，可以考虑**再次hash唯一标识（例如订单orderId）到不同的线程**上，多个消费者线程并发处理消息（依旧可以保证局部有序）。**（总结：把需要有序的数据hash到同一个内存队列）**

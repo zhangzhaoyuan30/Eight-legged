@@ -2,9 +2,11 @@
 <!-- TOC -->
 
 - [1 特性](#1-特性)
-- [2 基本概念](#2-基本概念)
-    - [2.1 Parallel](#21-parallel)
-    - [2.2 两类进程](#22-两类进程)
+- [2 JobManager & TaskManager](#2-jobmanager--taskmanager)
+    - [2.1 Flink 启动](#21-flink-启动)
+    - [2.2 JobManager](#22-jobmanager)
+    - [2.2 TaskManager](#22-taskmanager)
+    - [2.3 集群](#23-集群)
 - [3 window](#3-window)
     - [3.1 分类](#31-分类)
     - [3.2 组件](#32-组件)
@@ -12,6 +14,7 @@
     - [3.3 窗口应用函数](#33-窗口应用函数)
     - [3.4 晚到事件](#34-晚到事件)
 - [4 time](#4-time)
+    - [4.1 Processing Time](#41-processing-time)
     - [4.1 Processing Time](#41-processing-time)
     - [4.2 Event Time](#42-event-time)
     - [4.3 Ingestion Time](#43-ingestion-time)
@@ -27,11 +30,6 @@
     - [7.3 exactly-once原理](#73-exactly-once原理)
         - [7.3.1 内部](#731-内部)
         - [7.3.2 端到端](#732-端到端)
-- [8 Flink Runtime](#8-flink-runtime)
-    - [8.1 总体](#81-总体)
-    - [8.2 JobManager](#82-jobmanager)
-    - [8.2 TaskManager](#82-taskmanager)
-    - [8.3 集群](#83-集群)
 - [9 Join](#9-join)
     - [9.1 内连接](#91-内连接)
     - [9.1.1 Window Join](#911-window-join)
@@ -54,23 +52,44 @@
 - **支持具有Backpressure功能**的持续流模型。
 - 支持程序自动优化：避免特定情况下Shuffle、排序等昂贵操作，中间结果有必要进行缓存。
 - Flink 的 API 要更“上层”一些。许多研究者在进行实验时，可能会更喜欢自由度高的 Storm，因为它更容易保证实现预想的图结构；而在工业界则更喜欢 Flink 这类高级 API，因为它使用更加简单
-# 2 基本概念
-## 2.1 Parallel 
-- 一个Stream可以被分成多个Stream分区（Stream
-Partition），一个Operator的并行度等于Operator Subtask的个数，**一个Stream的并行度总是等于生成它的Operator的并行度**
-- **Operator Chain**：多个Operator 串起来组成一个Operator Chain，作为一个task ，会在TaskManager上**一个独立的线程Task slot**中执行
-## 2.2 两类进程
-- JobManager（又称为 JobMaster）：协调 Task 的分布式执行，包括调度 Task、协调创建 Checkpoint 以及当 Job failover 时协调各个 Task 从 Checkpoint 恢复等。
-- TaskManager（又称为 Worker）：执行 Dataflow 中的 Tasks，包括内存 Buffer 的分配、Data Stream 的传递等。
-    - Task Slot 是一个 TaskManager 中的最小资源分配单位，一个 TaskManager 中有多少个 Task Slot 就意味着能支持多少并发的 Task 处理。需要注意的是，**一个 Task Slot 中可以执行多个 Operator，一般这些 Operator 是能被 Chain 在一起处理的**
-    - chain条件：
-        - 上下游算子的并行度一致
-        - 下游节点的入度为1 
-        - 上下游节点都在同一个 slot group 中
-        - 下游节点的 chain 策略为 ALWAYS（可以与上下游链接，map、flatmap、filter等默认是ALWAYS）
-        - 上游节点的 chain 策略为 ALWAYS 或 HEAD（只能与下游链接，不能与上游链接，Source默认是HEAD）
-        - 两个节点间数据分区方式是 forward
-        用户没有禁用 chain（代码中是否配置disableChain()）
+# 2 JobManager & TaskManager
+## 2.1 Flink 启动
+- per-job
+![](../picture/大数据/flink/9-架构.png)
+## 2.2 JobManager
+协调 Task 的分布式执行，包括调度 Task、协调创建 Checkpoint 以及当 Job failover 时协调各个 Task 从 Checkpoint 恢复等。包含了三个组件，即 Dispatcher、ResourceManager 和 JobMaster。
+- Dispatcher 负责接收用户提供的作业，并且负责为这个新提交的作业拉起一个新的 JobManager 组件。
+- ResourceManager 负责资源的管理，**在整个 Flink 集群中只有一个 ResourceManager**。
+- JobMaster 负责管理作业的执行，在一个 Flink 集群中可能有多个作业同时执行，每个作业都有自己的 JobMaster 组件。
+
+这三个组件都包含在 JobManager 进程中。
+## 2.2 TaskManager
+[Tasks 和算子链](https://ci.apache.org/projects/flink/flink-docs-release-1.12/zh/concepts/flink-architecture.html)
+每TaskManager都是一个JVM进程。
+![](../picture/%E5%A4%A7%E6%95%B0%E6%8D%AE/flink/12-%E6%A6%82%E5%BF%B5.png)
+- Task Slot 是一个 TaskManager 中的**最小资源分配单位**（资源最小单元的抽象），从而表示TaskManager的并发能力，一般可以设置和TaskManager核数相同。
+- task是一种抽象，表示可以在单个线程中执行的Operator chain。类似于keyBy(导致shuffle)或pipeline 的 parallelism 的更改将打破chain 并迫使 Operator 进入单独的任务。在上面的图中，应用程序有三个任务。
+- **subtask是task的一个并行切片**(slice)。也是任务的执行单元。在上面的图中，该应用程序有共5个subtask。2+2+1
+- 通过调整 TaskManager 中 task slot 的数量，用户可以定义 subtask 如何互相隔离
+    - **每个 TaskManager 有一个 slot，这意味着每个 task group 都在单独的 JVM 中运行，小米采用这种方式**（例如，可以在单独的容器中启动）
+    - 具有多个 slot 意味着更多 subtask 共享同一 JVM。一 JVM 中的 task 共享 TCP 连接（通过多路复用）和心跳信息。它们还可以共享数据集和数据结构，从而减少了每个 task 的开销。
+- 默认情况下，Flink **允许 subtask 共享 Slot，即使它们是不同 task 的 subtask**，只要它们来自相同的 job。这种共享可以使得同一个slot运行整个job的流水线（pipleline），有更好的资源利用率。上图经过共享，**只需要2个slot，而不是5个slot**  
+![](../picture/%E5%A4%A7%E6%95%B0%E6%8D%AE/flink/13-share.png)
+    - Flink 集群所需的 **task slot 和作业中使用的最大并行度恰好一样**。无需计算程序总共包含多少个 task（具有不同并行度）
+    - 容易获得更好的资源利用。如果没有 slot 共享，非密集 subtask（source/map()）将阻塞和密集型 subtask（window） 一样多的资源。
+- chain条件：
+    - 上下游算子的并行度一致
+    - 下游节点的入度为1 
+    - 上下游节点都在同一个 slot group 中
+    - 下游节点的 chain 策略为 ALWAYS（可以与上下游链接，map、flatmap、filter等默认是ALWAYS）
+    - 上游节点的 chain 策略为 ALWAYS 或 HEAD（只能与下游链接，不能与上游链接，Source默认是HEAD）
+    - 两个节点间数据分区方式是 forward
+    用户没有禁用 chain（代码中是否配置disableChain()）
+
+## 2.3 集群
+- Session集群：集群（和 JobManager）长期运行，启动时间短，适用于执行时间短，交互查询，资源不隔离，资源竞争
+- Job集群(per-job)：一旦作业完成，Flink Job 集群将被拆除。适用于长期运行，稳定性高，启动时间不敏感
+
 # 3 window
 [flink--window、eventTime和watermark原理和使用](https://blog.51cto.com/kinglab/2457255)
 ## 3.1 分类
@@ -105,7 +124,7 @@ Window 中的三个核心组件：WindowAssigner、Trigger 和 Evictor
 ## 3.4 晚到事件
 - allowedLateness：保留窗口直到watermark=endtime+Lateness，当延迟数据到来时会触发窗口计算。**仅适用于eventTime**
 - 既然有了watermark了，为什么还要搞allowedLateness ?
-watermark控制窗口激活的时间，解决数据乱序到达的问题。allowedLateness控制窗口的销毁时间，解决窗口触发后数据迟到后的问题
+watermark控制窗口激活的时间，解决数据乱序到达的问题。allowedLateness控制窗口的销毁时间，解决窗口触发后数据迟到后的问题，迟到数据来之后重新触发窗口计算（个人理解allowedLateness可以设置更长一些的时间。）
 - 旁路输出sideOutputLateData
 # 4 time
 ```java
@@ -158,6 +177,7 @@ rocksDB降低性能：保存到磁盘需要序列化
 Chandy-Lamport algorithm 
 ### 7.3.1 内部
 [一文搞懂 Flink 的 Exactly Once 和 At Least Once](https://ververica.cn/developers/flink-exactly-once-and-at-least-once/)
+[Flink中Barrier对齐机制](https://blog.csdn.net/qq_42009405/article/details/122850469)
 - Flink 不依赖于 kafka 内置的消费组位移管理，而是在内部自行记录和维护 consumer 的位移
 - 一次checkpoint是以下内容的一致性快照：
     - 应用程序的当前状态（统计得到的 pv,uv）
@@ -188,30 +208,6 @@ Chandy-Lamport algorithm
 - 在checkpoint开始的时候，即两阶段提交协议的“预提交”阶段，将两次checkpoint之间（上次和本次）的数据放在一个事务中，一起预提交，在 preCommit 方法中执行flush
 - 下一步是通知所有operator，checkpoint已经成功了。这是两阶段提交协议的提交阶段，JobManager为应用程序中的每个operator发出checkpoint已完成的回调。  
 - 数据源和widnow operator没有外部状态，因此在提交阶段，这些operator不必执行任何操作。但是，数据输出端（Data Sink）拥有外部状态，**此时应该提交外部事务**。
-# 8 Flink Runtime
-## 8.1 总体
-- per-job
-![](../picture/大数据/flink/9-架构.png)
-## 8.2 JobManager
-其中，Master 部分又包含了三个组件，即 Dispatcher、ResourceManager 和 JobMaster。
-- Dispatcher 负责接收用户提供的作业，并且负责为这个新提交的作业拉起一个新的 JobManager 组件。
-- ResourceManager 负责资源的管理，**在整个 Flink 集群中只有一个 ResourceManager**。
-- JobMaster 负责管理作业的执行，在一个 Flink 集群中可能有多个作业同时执行，每个作业都有自己的 JobMaster 组件。
-
-这三个组件都包含在 JobManager 进程中。
-## 8.2 TaskManager
-[Tasks 和算子链](https://ci.apache.org/projects/flink/flink-docs-release-1.12/zh/concepts/flink-architecture.html)
-- 在 TaskManager 中资源调度的最小单位是 task slot。TaskManager 中 task slot 的数量表示并发处理 task 的数量（**一般 slot 数量 = 最大并发度**）。请注意一个 task slot 中可以执行多个算子
-- 通过调整 TaskManager 中 task slot 的数量，用户可以定义 subtask 如何互相隔离
-    - **每个 TaskManager 有一个 slot，这意味着每个 task group 都在单独的 JVM 中运行，小米采用这种方式**（例如，可以在单独的容器中启动）
-    - 具有多个 slot 意味着更多 subtask 共享同一 JVM。一 JVM 中的 task 共享 TCP 连接（通过多路复用）和心跳信息。它们还可以共享数据集和数据结构，从而减少了每个 task 的开销。
-- 默认情况下，Flink **允许 subtask 共享 Slot，即使它们是不同 task 的 subtask**，只要它们来自相同的 job。这种共享可以有更好的资源利用率。
-    - Flink 集群所需的 task slot 和作业中使用的最大并行度恰好一样。无需计算程序总共包含多少个 task（具有不同并行度）
-    - 容易获得更好的资源利用。如果没有 slot 共享，非密集 subtask（source/map()）将阻塞和密集型 subtask（window） 一样多的资源。
-## 8.3 集群
-- Session集群：集群（和 JobManager）长期运行，启动时间短，适用于执行时间短，交互查询，资源不隔离，资源竞争
-- Job集群(per-job)：一旦作业完成，Flink Job 集群将被拆除。适用于长期运行，稳定性高，启动时间不敏感
-
 # 9 Join
 ## 9.1 内连接
 ## 9.1.1 Window Join 

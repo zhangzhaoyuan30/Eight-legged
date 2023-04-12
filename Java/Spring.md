@@ -18,7 +18,7 @@
         - [4.3.3 finishBeanFactoryInitialization(beanFactory)](#433-finishbeanfactoryinitializationbeanfactory)
     - [4.4 Bean生命周期](#44-bean生命周期)
         - [4.4.1 销毁Bean](#441-销毁bean)
-        - [4.4.1 Spring如何解决循环依赖？](#441-spring如何解决循环依赖)
+        - [4.4.2 Spring如何解决循环依赖？](#442-spring如何解决循环依赖)
         - [4.4.2 Bean对IoC容器的感知](#442-bean对ioc容器的感知)
         - [4.4.3 Spring中提供了3种自定义init和destroy](#443-spring中提供了3种自定义init和destroy)
     - [4.5 其他](#45-其他)
@@ -26,6 +26,7 @@
 - [5 AOP](#5-aop)
     - [5.1 AOP的作用和优点](#51-aop的作用和优点)
     - [5.2 代理](#52-代理)
+    - [5.3 AOP基本概念](#53-aop基本概念)
     - [5.3 AOP基本概念](#53-aop基本概念)
     - [5.4 使用](#54-使用)
     - [5.5 Proceedingjoinpoint和Joinpoint](#55-proceedingjoinpoint和joinpoint)
@@ -213,8 +214,9 @@ Resource定位指的是BeanDefinition的资源定位，它由ResourceLoader通�
    // ...
 ```
 1. 实例化Bean
-   - 如果beanDefinition.getMethodOverrides()为空，即采用反射实例化，否则cglib
-      > lookup-method：方法查找，可以对指定的bean的方法进行拦截，然后从容器中查找指定的bean作为被拦截方法的返回值，可用于单例bean中使用多例bean
+   - 如果beanDefinition.getMethodOverrides()为空（没有配置下面的两个方法），即采用反射实例化，否则cglib  
+   [spring bean中子元素lookup-method和replaced-method](https://www.cnblogs.com/happyflyingpig/p/8047441.html)
+      > lookup-method（返回bean）：方法查找，可以对指定的bean的方法进行拦截，然后从容器中查找指定的bean作为被拦截方法的返回值，可用于**单例bean中使用多例bean**。（避免实现ApplicationContextWare，通过applicationContext获取bean）
       
       > replaced-method：方法替换
    - getBean->doGetBean->CreateBean->doCreateBean
@@ -274,9 +276,9 @@ Resource定位指的是BeanDefinition的资源定位，它由ResourceLoader通�
 - 在doCreateBean() 中调用 registerDisposableBeanIfNecessary() 判断当前bean是否需要放入到disposableBeans中
 - 判断条件除了上述两种还有下文将提到的@preDestroy，还有实现了AutoCloseable也可以。共四种
 - Spring目前是先加载的bean后销毁
-### 4.4.1 Spring如何解决循环依赖？
+### 4.4.2 Spring如何解决循环依赖？
 [烂大街的Spring循环依赖问题](https://juejin.cn/post/6859189194837721102)
-- 只能解决单例、非构造器（双方都是构造器注入）注入
+- 只能解决单例、非构造器（双方都是构造器注入，或先创建的是构造器注入）注入
    - 构造器注入可以通过@Lazy注解解决，注入的是一个代理对象
 - 三级缓存
    |cache|说明|
@@ -287,10 +289,73 @@ Resource定位指的是BeanDefinition的资源定位，它由ResourceLoader通�
 - 调用过程
 ![](../picture/Java/Spring/5-循环依赖.jpg)
 - 为什么需要ObjectFactory三级缓存?
-   - 如果创建的Bean有AOP代理，那其他对象注入时，**注入的应该是对应的代理对象**；正常情况下（没有循环依赖情况），Spring是在是通过AspectJAutoProxyCreator这个后置处理器的postProcessAfterInitialization方法中对初始化后的Bean完成AOP代理
-   - 三级缓存的ObjectFactory是为了延迟AOP代理，只有真正发生循环依赖时，才去提前生成代理对象
-   - 这样在没有循环依赖的情况下，代理就可以按着**Spring设计原则的步骤，即在AspectJAutoProxyCreator中创建**
-   - 同时为了防止多次生成代理，加入二级缓存
+
+   （如果需要注入bean的时候没有一级缓存，但有三级缓存，表名发生了循环依赖，需要提前生成代理对象）
+
+   假设我们现在是二级缓存架构，创建 A 的时候，我们不知道有没有循环依赖，所以放入二级缓存提前暴露，接着创建 B，也是放入二级缓存，这时候发现又循环依赖了 A，就去二级缓存找，是有，但是如果此时还有 AOP 代理呢，我们要的是代理对象可不是原始对象，这怎么办，只能改逻辑，在第一步的时候，所有 Bean 统统去完成 AOP 代理，如果是这样的话，就不需要三级缓存了，但是这样不仅没有必要，而且违背了 Spring 在结合 AOP 跟 Bean 的生命周期的设计。
+
+   所以 Spring “多此一举”的将实例先封装到 ObjectFactory 中（三级缓存），主要关键点在**getobject() 方法并非直接返回实例，而是对实例又使用smartInstantiattionAwareBeanPostProcessor 的 getEarlyBeanReference 方法对 bean 进行处理**，也就是说，当 Spring 中存在该后置处理器，所有的单例 bean 在实例化后都会被进行提前曝光到三级缓存中，但是并不是所有的 bean 都存在循环依赖，**也就是三级缓存到二级缓存的步骤不一定都会被执行，有可能曝光后直接创建完成，没被提前引用过，就直接被加入到一级缓存中**。因此可以确保只有提前曝光且被引用的 bean 才会进行该后置处理。
+   ```java
+   protected Object getSingleton(String beanName, boolean allowEarlyReference) {
+      Object singletonObject = this.singletonObjects.get(beanName);
+      if (singletonObject == null && isSingletonCurrentlyInCreation(beanName)) {
+         synchronized (this.singletonObjects) {
+               singletonObject = this.earlySingletonObjects.get(beanName);
+               if (singletonObject == null && allowEarlyReference) {
+               // 三级缓存获取，key=beanName value=objectFactory，objectFactory中存储     //getObject()方法用于获取提前曝光的实例
+                  ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
+                  if (singletonFactory != null) {
+                     // 三级缓存有的话，就把他移动到二级缓存
+                     singletonObject = singletonFactory.getObject();
+                     this.earlySingletonObjects.put(beanName, singletonObject);
+                     this.singletonFactories.remove(beanName);
+                  }
+               }
+         }
+    }
+    return singletonObject;
+   }
+   ```
+   
+   ```java
+   protected Object doCreateBean(){
+      //...
+      final Object bean = instanceWrapper.getWrappedInstance();
+      //...
+      boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences && isSingletonCurrentlyInCreation(beanName));
+         // 需要提前暴露（支持循环依赖），就注册一个ObjectFactory到三级缓存
+      if (earlySingletonExposure) { 
+            // 添加 bean 工厂对象到 singletonFactories 缓存中，并获取原始对象的早期引用
+      //匿名内部方法 getEarlyBeanReference 就是后置处理器 
+      // SmartInstantiationAwareBeanPostProcessor 的一个方法，
+      // 它的功效为：保证自己被循环依赖的时候，即使被别的Bean @Autowire进去的也是代理对象
+      addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
+      }
+
+      // 此处注意：如果此处自己被循环依赖了  那它会走上面的getEarlyBeanReference，从而创建一个代理对象从  三级缓存转移到二级缓存里
+      // 注意此时候对象还在二级缓存里，并没有在一级缓存。并且此时后续的这两步操作还是用的 exposedObject，它仍旧是原始bean对象~~~
+      Object exposedObject = bean;
+      populateBean(beanName, mbd, instanceWrapper);
+      exposedObject = initializeBean(beanName, exposedObject, mbd);
+      
+      ...
+      
+      // 循环依赖校验
+      if (earlySingletonExposure) {
+            // 注意此处第二个参数传的false，表示不去三级缓存里再去调用一次getObject()方法了~~~，此时代理对象还在二级缓存，所以这里拿出来的就是个 代理对象
+      // 最后赋值给exposedObject  然后return出去，进而最终被addSingleton()添加进一级缓存里面去  
+      // 这样就保证了我们容器里 最终实际上是代理对象，而非原始对象~~~~~
+      Object earlySingletonReference = getSingleton(beanName, false);
+      if (earlySingletonReference != null) {
+         if (exposedObject == bean) { 
+         exposedObject = earlySingletonReference;
+         }
+      }
+      //...
+      }
+ 
+   }
+   ```
 ### 4.4.2 Bean对IoC容器的感知
 一部分通过上述invokeAwareMethods()实现，另一部分
 通过ApplicationContextAwareProcessor实现
@@ -319,6 +384,72 @@ AOP思想的实现一般都是基于代理模式
 - 区别
    - CGLib所创建的动态代理对象的性能比JDK所创建的代理对象**性能高**不少，但CGLib在创建代理对象时所**花费的时间却比JDK动态代理多**很多，所以对于singleton的代理对象或者具有实例池的代理，因为无需频繁的创建新的实例，所以比较适合CGLib动态代理技术，反之则适用于JDK动态代理技术。
    - 另外，由于CGLib采用动态创建子类的方式生成代理对象，所以**不能对目标类中的final，private等方法**进行处理。所以，大家需要根据实际的情况选择使用什么样的代理了
+```java
+package com.sun.proxy;
+import com.proxy.Hello;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.UndeclaredThrowableException;
+public final class $Proxy0 extends Proxy implements Hello {
+    private static Method m3;
+    private static Method m1;
+    private static Method m0;
+    private static Method m2;
+    public $Proxy0(InvocationHandler paramInvocationHandler) {
+        super(paramInvocationHandler);
+    }
+    public final String say() {
+        try {
+            return (String)this.h.invoke(this, m3, null);
+        } catch (Error|RuntimeException error) {
+            throw null;
+        } catch (Throwable throwable) {
+            throw new UndeclaredThrowableException(throwable);
+        } 
+    }
+    public final boolean equals(Object paramObject) {
+        try {
+            return ((Boolean)this.h.invoke(this, m1, new Object[] { paramObject })).booleanValue();
+        } catch (Error|RuntimeException error) {
+            throw null;
+        } catch (Throwable throwable) {
+            throw new UndeclaredThrowableException(throwable);
+        } 
+    }
+    public final int hashCode() {
+        try {
+            return ((Integer)this.h.invoke(this, m0, null)).intValue();
+        } catch (Error|RuntimeException error) {
+            throw null;
+        } catch (Throwable throwable) {
+            throw new UndeclaredThrowableException(throwable);
+        } 
+    }
+    public final String toString() {
+        try {
+            return (String)this.h.invoke(this, m2, null);
+        } catch (Error|RuntimeException error) {
+            throw null;
+        } catch (Throwable throwable) {
+            throw new UndeclaredThrowableException(throwable);
+        } 
+    }
+    static {
+        try {
+            m3 = Class.forName("com.proxy.Hello").getMethod("say", new Class[0]);
+            m1 = Class.forName("java.lang.Object").getMethod("equals", new Class[] { Class.forName("java.lang.Object") });
+            m0 = Class.forName("java.lang.Object").getMethod("hashCode", new Class[0]);
+            m2 = Class.forName("java.lang.Object").getMethod("toString", new Class[0]);
+            return;
+        } catch (NoSuchMethodException noSuchMethodException) {
+            throw new NoSuchMethodError(noSuchMethodException.getMessage());
+        } catch (ClassNotFoundException classNotFoundException) {
+            throw new NoClassDefFoundError(classNotFoundException.getMessage());
+        } 
+    }
+}
+```
 ## 5.3 AOP基本概念
 - 通知(Adivce)（增强）
    - Before 在方法被调用之前调用
@@ -367,7 +498,7 @@ public class StopWatchAdvice {
 [spring源码剖析（六）AOP实现原理剖析](https://blog.csdn.net/fighterandknight/article/details/51209822)  
 [Spring AOP 源码分析系列文章导读](http://www.tianxiaobo.com/2018/06/17/Spring-AOP-%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E7%B3%BB%E5%88%97%E6%96%87%E7%AB%A0%E5%AF%BC%E8%AF%BB/)
 ![](../picture/Java/Spring/6-AOP-1.png)
-- AbstractAutoProxyCreator.postProcessAfterInitialization中，从配置文件和@Aspect注解中获取匹配的增强，然后生成代理对象
+- AbstractAutoProxyCreator.postProcessAfterInitialization中，从配置文件和@Aspect注解中**获取匹配的增强**，然后生成代理对象
 - 拦截器链  
    - Advice通过AdvisorAdapter转化为MethodInterceptor
       ```java
@@ -406,13 +537,38 @@ public class StopWatchAdvice {
       注意mi.proceed()会返回到ReflectiveMethodInvocation去执行下一个拦截器
    - 在proceed方法中逐个运行拦截器链的方法，在运行拦截器链方法前先对代理方法进行匹配。如果已经到链末尾，执行目标对象的方法，否则调用下一个拦截器
       ```java
-      if (dm.methodMatcher.matches(this.method, targetClass, this.arguments)) {
-               return dm.interceptor.invoke(this);
-      }
-      else {
-         // Dynamic matching failed.
-         // Skip this interceptor and invoke the next in the chain.
-         return proceed();
+      public Object proceed() throws Throwable {
+       //  We start with an index of -1and increment early.
+       if (this.currentInterceptorIndex == this.interceptorsAndDynamicMethodMatchers.size()- 1) {
+           //如果Interceptor执行完了，则执行joinPoint
+           return invokeJoinpoint();
+       }
+ 
+       Object interceptorOrInterceptionAdvice =
+           this.interceptorsAndDynamicMethodMatchers.get(++this.currentInterceptorIndex);
+       
+       //如果要动态匹配joinPoint
+       if (interceptorOrInterceptionAdvice instanceof InterceptorAndDynamicMethodMatcher){
+           // Evaluate dynamic method matcher here: static part will already have
+           // been evaluated and found to match.
+           InterceptorAndDynamicMethodMatcher dm =
+                (InterceptorAndDynamicMethodMatcher)interceptorOrInterceptionAdvice;
+           //动态匹配：运行时参数是否满足匹配条件
+           if (dm.methodMatcher.matches(this.method, this.targetClass,this.arguments)) {
+                //执行当前Intercetpor
+                returndm.interceptor.invoke(this);
+           }
+           else {
+                //动态匹配失败时,略过当前Intercetpor,调用下一个Interceptor
+                return proceed();
+           }
+       }
+       else {
+           // It's an interceptor, so we just invoke it: The pointcutwill have
+           // been evaluated statically before this object was constructed.
+           //执行当前Intercetpor
+           return ((MethodInterceptor) interceptorOrInterceptionAdvice).invoke(this);
+       }
       }
       ```
 # 6 @Autowired @Resource @Qualifier区别
@@ -422,7 +578,7 @@ public class StopWatchAdvice {
 默认按名称，可以指定按名称和类型
 - @Primary注解是加在bean上的
 # 7 Spring MVC？
-配置DispatcherServlet和ContextLoaderListener
+配置DispatcherServlet和ContextLoaderListener，**ContextLoaderListener创建的是根IOC，DispatcherServlet创建子IOC**
 ```xml
 <servlet>
     <servlet-name>sample</servlet-name>
@@ -496,8 +652,8 @@ AnnotationConfigApplicationContext 初始化时会注册上述Processor
 
 # 9 Import注解？
 [Spring Import 三种用法与源码解读](https://cloud.tencent.com/developer/article/1334255)
-- 引入其他的@Configuration
-- 向容器注册类
+- 引入其他的@Configuration（如果其没被扫描到，可以使用这种方式）
+- 向容器注册类（导入一个普通Java类）
 - 指定实现ImportSelector(以及DefferredServiceImportSelector)的类，用于个性化加载
 - 指定实现ImportBeanDefinitionRegistrar的类，用于个性化加载
 ## 9.1 ImportSelector

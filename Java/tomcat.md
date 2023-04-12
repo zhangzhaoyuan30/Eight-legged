@@ -8,8 +8,10 @@
     - [2.1 Connector](#21-connector)
     - [2.2 Container](#22-container)
     - [2.2.1 4种容器](#221-4种容器)
+    - [2.2.1 4种容器](#221-4种容器)
         - [2.2.2 如何用 URL 定位到一个 Servlet？](#222-如何用-url-定位到一个-servlet)
         - [2.2.3 Container流程](#223-container流程)
+        - [2.2.4 valve](#224-valve)
         - [2.2.4 valve](#224-valve)
 - [3 tomcat的线程模型](#3-tomcat的线程模型)
 - [4 Servlet](#4-servlet)
@@ -129,6 +131,9 @@ tomcat 以JNI形式调用http服务器的核心动态链接库来处理文件读
 Servlet 是基于 Java 技术的 web 组件，容器托管的，用于**生成动态Web内容**。  
 客户端通过 Servlet 容器实现的请求/应答模型与 Servlet 交互。  
 - Servlet 接口是 Java Servlet API 的核心抽象。所有 Servlet 类必须直接或间接的实现该接口，或者更通常做法是通过继承一个实现了该接口的类从而复用许多共性功能。目前有 **GenericServlet 和HttpServlet** 这两个类实现了 Servlet 接口。大多数情况下，开发者只需要**继承 HttpServlet** 去实现自己的 Servlet 即可。
+- Servlet生命周期
+- Servlet 配置：Servlet 规范定义了如何配置 Servlet，包括使用 web.xml 文件或注解的方式来进行配置，如指定 Servlet 的 URL 映射、初始化参数等。
+- ServletContext、过滤器（Filter）、监听器（Listener）
 ### 4.1.1 Servelt生命周期？
 生命周期规定了 Servlet 如何被加载、实例化、初始化、处理客户端请求，以及何时结束服务。该声明周期可以通过 javax.servlet.Servlet 接口中的 **init、service 和 destroy** 这些 API 来表示
 - 加载和实例化

@@ -33,8 +33,8 @@
 - [14 无锁队列](#14-无锁队列)
     - [14.1 解决伪共享问题](#141-解决伪共享问题)
     - [14.2 lazySet](#142-lazyset)
-    - [14.2 lazySet](#142-lazyset)
 - [15 设计模式](#15-设计模式)
+- [16 优化：以数组代替Set的方式，存储SelectedKeys](#16-优化以数组代替set的方式存储selectedkeys)
 
 <!-- /TOC -->
 
@@ -47,6 +47,7 @@
 ---
 [若地](https://learn.lianglianglee.com/%E4%B8%93%E6%A0%8F/Netty%20%E6%A0%B8%E5%BF%83%E5%8E%9F%E7%90%86%E5%89%96%E6%9E%90%E4%B8%8E%20RPC%20%E5%AE%9E%E8%B7%B5-%E5%AE%8C/00%20%E5%AD%A6%E5%A5%BD%20Netty%EF%BC%8C%E6%98%AF%E4%BD%A0%E4%BF%AE%E7%82%BC%20Java%20%E5%86%85%E5%8A%9F%E7%9A%84%E5%BF%85%E7%BB%8F%E4%B9%8B%E8%B7%AF.md)
 
+[聊聊Netty那些事](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=Mzg2MzU3Mjc3Ng==&action=getalbum&album_id=2217816582418956300&scene=173&from_msgid=2247484532&from_itemidx=1&count=3&nolastread=1#wechat_redirect)
 # 0 NIO 和 为什么Netty？
 - Java非阻塞的缺点：并发数和线程数1:1，浪费资源，并发量有限
 -  Channel和流的区别：Channel是全双工的，读写同时进行，可以更好映射底层操作系统的API
@@ -235,7 +236,7 @@ CompositeByteBuf 在多个buffer合并时，不需要copy，而是组合成一�
 ## 11.2 实现细节
 ![](./pic/netty/4-eventloop%E4%BB%BB%E5%8A%A1.png)
 1. 判定当前执行的线程是不是分配给channel的那一个select线程(EventLoop.inEventLoop(Thread))
-2. 如果是直接执行，否则放入队列
+2. 如果是直接执行，否则放入队列[push](https://juejin.cn/post/7067170762678861854)
 3. 另外一个channel整个生命周期都在一个eventLoop内
 
 以上实现确保任何线程可以与channel直接交互而无需在ChannelHandler中额外进行同步（实现无锁化）
@@ -314,12 +315,25 @@ public class FalseSharingPadding {
 }
 
 ```
+
+主要是解决成员变量producerIndex、producerLimit、consumerIndex等的伪共享
 ## 14.2 lazySet
 [Java中的无锁并发设计](https://zhuanlan.zhihu.com/p/476210914)
 
 lazySet使用Unsafe.putOrderedObject方法，对低延迟代码是很有用的。因为它使用快速的存储-存储(store-store) barrier（x86架构不需要，相当于没有开销）, 而不是较慢的存储-加载(store-load) barrier。因此写后结果并不会被其他线程看到，甚至是自己的线程，通常是几纳秒后被其他线程看到，这个时间比较短，所以代价可以忍受。
 
+- 在多生产端写入时，会出现多核争用producerIndex的情况，此处使用Lock CAS指令来更新producerIndex。只要相关槽被当前线程占用，**对于实际元素的更新，只需要使用StoreStore Barrier即可，避免重排，因为并不需要其他线程立即可见，读线程只有一个，读线程自己加读屏障就可以**。
+- 在生产端的一个优化策略，定义producerLimit变量，防止在多生产端，频繁读取consumerIndex，造成缓存失效，producerLimit设置成consumerIndex+mask+1，且此处producerLimit设置为独立缓存行，对其更新仅使用StoreStore Barrier，设计比较巧妙，虽然在多生产端都可能产生更新操作，因为考虑到对producerLimit的更新不影响全局，且紧接着会执行Lock CAS指令，强制刷新Store Buffer，对producerLimit只会根据consumerIndex递增操作。
+- 消费端，只要consumerIndex和producerIndex不相等，就表明queue中有元素，这个地方特意说明一下，**producerIndex的更新保证立即可见，但数组元素的写入使用StoreStore Barrier只能保证尽快可见**
+- 生产端以consumerIndex来判定是否可以填充数据，consumerIndex的更新操作关联到元素置空操作
+
+
 [Java内存访问重排序的研究](https://tech.meituan.com/2014/09/23/java-memory-reordering.html)
 
 # 15 设计模式
 
+# 16 优化：以数组代替Set的方式，存储SelectedKeys
+[优化一：以数组代替Set的方式，存储SelectedKeys
+](https://solthx.github.io/2020/10/14/Netty%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0%EF%BC%88%E4%BA%8C%EF%BC%89NioEventLoop/)
+
+当有新事件到来之后，就需要处理这些事件. 因为都是基于NIO来做的，所以这里在处理新事件的时候(SelectionKey)，其实也是使用的NIO里的东西，只不过Netty又在其基础上做了优化，比如：SelectionKeys的存储方法，用数组来代替集合，使得add操作变成O(1)。同时利用缓存行

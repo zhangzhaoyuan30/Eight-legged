@@ -1,8 +1,11 @@
 {
     "files.eol": "\n",
     "markdown-pdf.displayHeaderFooter": false,
+    "markdown-pdf.StatusbarMessageTimeout": 100000,
     "markdown-pdf.styles": [
-        "C:\\\\Users\\\\zhang\\\\Desktop\\\\doc\\\\markdown_2.css"
+        "/Users/zhangzhaoyuan/Nutstore Files/我的坚果云/技术类读书笔记/Eight-legged/面试/简历/markdown_2.css"
     ],
-    "markdown-pdf.StatusbarMessageTimeout": 100000
+    "markdown.styles": [
+        "/Users/zhangzhaoyuan/Nutstore Files/我的坚果云/技术类读书笔记/Eight-legged/面试/简历/markdown_2.css"
+    ]
 }
