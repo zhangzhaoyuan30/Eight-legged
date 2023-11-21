@@ -40,7 +40,6 @@
     - [9.1 生产者](#91-生产者)
         - [9.1.1 幂等实现原理](#911-幂等实现原理)
     - [9.2 消费者](#92-消费者)
-    - [9.3 Kafka交付语义总结](#93-kafka交付语义总结)
 - [10 Kafka事务？](#10-kafka事务)
     - [10.1 事务性消息传递和flink？](#101-事务性消息传递和flink)
 - [11 **Kafka如何保证可靠性？**](#11-kafka如何保证可靠性)
@@ -211,24 +210,31 @@ KafkaConsumer 非线程安全，实现原理是每个方法调用前执行acquir
     - 可以利用read-ahead和write-behind
         - read-ahead：如果你的磁盘使用更倾向于顺序读取，那么 read-ahead 可以有效的使用每次从磁盘中读取到的有用数据预先填充 page cache，便于接下来对该区域进行读取时，不会因缺页（page fault）而阻塞
         - write-behind：数据写入page cache，将多个小型的逻辑写合并成一次大型的物理磁盘写入。
-- **Kafka依赖页缓存**：
+- **Kafka依赖Page Cache**：
     - 不用堆内存来做缓存（进程内缓存）的原因：
         - 空间效率低（对象元数据）
         - GC带来性能问题
         - **程序退出或重启页缓存依旧存在**但进程内缓存会失效
     - **简化了代码**：因为保持 cache 和文件系统之间一致性的逻辑由 OS 保证。Kafka只需要调整刷盘策略
-    - **读写空中接力**：如果Kafka producer的生产速率与consumer的消费速率相差不大，那么就能几乎只靠对broker page cache的读写完成整个生产-消费过程（**sendfile系统调用**，将数据从 pagecache 转移到 socket 网络连接中）, 所有的数据都在内存中，这是 kafka 的**高吞吐量的保证**
+    - **读写空中接力**：如果Kafka producer的生产速率与consumer的消费速率相差不大，那么就能几乎只靠对broker page cache的读写完成整个生产-消费过程（**sendfile系统调用**，将数据从 pagecache 转移到 socket 网络连接中，使用FileChannel.transferTo()）, 所有的数据都在内存中，这是 kafka 的**高吞吐量的保证**
+    - 具体使用
+        - 写（生产）消息：
+            - index文件较小，可以直接用mmap进行内存映射
+            - segment文件较大，可以采用普通的write（FileChannel.write），由于是顺序写PageCache，可以达到很高的性能
+        - 读（消费）消息：
+            - index文件仍然通过mmap读，缺页中断的可能性较小
+            - segment可以使用sendfile进行零拷贝的发送给消费者，达到非常高的性能
 - 刷盘策略
-    - 消息的可靠性应该由**多副本机制保障**而不是同步刷盘：严重影响性能
+    - 消息的可靠性应该由**多副本机制保障**而不是同步刷盘：严重影响性能。如果acks=-1，leader刷盘前挂了，数据其他副本还有丢不了
     - 对于大量使用页缓存的Kafka，应该**避免swap**，**vm.swappiness=1**(0表示关闭，最大100。设为1保留了swap 的机制而又最大限度地限制了它对Kafka 性能的影响)
         - >swap是把非活跃进程交换出内存
 ## 5.2 零拷贝
 见[零拷贝](../计算机基础/IO.md#/t4/t零拷贝技术)
 ## 5.3 **Kafka吞吐量总结**？
-- 分区：Partition 置于不同的磁盘上，从而实现磁盘间的并行处理，充分发挥多磁盘的优势
-- pagecache：读写空中接力
-- 零拷贝
 - 顺序写
+- pagecache、mmap，零拷贝（读写空中接力）
+- 分区：Partition 置于不同的磁盘上，从而实现磁盘间的并行处理，充分发挥多磁盘的优势
+
 # 6 控制器
 在Broker中选举其中一个作为控制器，负责管理集群中所有分区和副本的状态
 ## 6.1 控制器的选举
@@ -293,11 +299,13 @@ Kafka在0.9之前是基于Zookeeper来存储Partition的Offset信息(consumers/{
 ## 8.3 协议缺点
 Consumer Group 内所有 Consumer 从 Step2 发送 JoinGroup 请求开始便停止一切消费，直到 Step5 中 Coordinator 返回分区方案后才恢复正常消费。由于在这个过程中 Producer 仍在不断写入，在流量较大的情况下可能会导致严重的消息积压（Lag）。
 ## 8.4 Cooperative协议流程
-同样地，消费组有新成员加入，触发了rebalance，然后消费者发送JoinGroup给coordinator
+两次rebalance
 
-但是和之前不同，这个请求里面会携带消费者自己目前负责的分区，并且不会放弃自己的分区，继续消费。coordinator会在给leader的响应中告知各成员的分区信息
-
-leader接收到消息之后，执行分配方案，并且通知**有变化的消费者**执行相关操作：消费者停止消费某些分区后触发一次rebalance，再把这些分区分配给新消费者
+[kafka 重平衡解决方案: cooperative协议和static membership功能详解](https://zhuanlan.zhihu.com/p/337469858)
+1. 第一次: 同样地，消费组有新成员加入，触发了rebalance，然后消费者发送JoinGroup给coordinator。但是和之前不同，这个请求里面会携带消费者自己目前负责的分区，并且不会放弃自己的分区，继续消费。coordinator会在给leader的响应中告知各成员的分区信息
+2. 第二次: leader接收到消息之后，执行分配方案，并且通知**有变化的消费者**执行相关操作：
+    1. 消费者停止消费某些分区后**再触发一次rebalance**
+    2. 再把这些分区分配给新消费者
 # 9 **消息交付语义**
 ## 9.1 生产者
 - At most once：acks=0（会导致retries参数失效）
@@ -321,10 +329,9 @@ leader接收到消息之后，执行分配方案，并且通知**有变化的消
 ## 9.2 消费者
 - At most once：先提交位移再处理消息
 - At least once：先处理消息再提交位移
-## 9.3 Kafka交付语义总结
-- Kafka 默认保证 **at-least-once** 的消息交付(acks=1并且retries=Integer.MAX_VALUE)
-- 并且 Kafka 允许用户通过禁用 producer 的重传功能和让 consumer 在处理一批消息之前提交 offset，来实现 at-most-once 的消息交付
-- 通过幂等和事务实现Exactly once
+- exactly-once
+    - 对于两个topic的场景，可以用kafka事务
+    - 写入外部系统，需要在位移和输出下游数据之间进行协调，比如两阶段提交，或者更好的方式是把消费位移和下游输出数据存在同一位置
 # 10 Kafka事务？
 [Kafka 事务机制与 Exactly Once 语义实现原理](https://www.infoq.cn/article/kafka-analysis-part-8)  
 [Kafka 0.11.0.0 是如何实现 Exactly-once 语义的](https://www.jianshu.com/p/5d889a67dcd3)
@@ -332,7 +339,10 @@ leader接收到消息之后，执行分配方案，并且通知**有变化的消
 幂等性并不能跨多个分区运作，而事务可以弥补这个缺陷。事务可以保证对多个分区写入操作的**原子性**。这种语义的主要应用场景就是 **Kafka topic 之间**的 exactly-once 的数据传递
 
 对于流式应用，为保证exactly-once，Kafka 需要保证对 **Consumer Offset 的 Commit 与 Producer 对发送消息的 Commit 包含在同一个事务中**
-- 开启方式：设置 transactionals.id
+- 开启方式：设置 transactionals.id（自动会开启幂等，一个生产者一个）
+- 使用场景
+    1. 生产者发送多条消息可以封装在一个事务中，形成一个原子操作。 多条消息要么都发送成功，要么都发送失败。
+    2. 将消息消费和生产封装在一个事务中，形成一个原子操作。在一个流式处理的应用中，常常一个服务需要从上游接收消息，然后经过处理后送达到下游，这就对应着消息的消费和生成。
 - 作用
     - 生产者角度
         - 保证跨生产者会话的消息幕等发送：具有相同transactionalld 的新生产者实例被创建且工作时，旧的且拥有相同transactionalld 的生产者实例将不再工作。

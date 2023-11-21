@@ -68,7 +68,7 @@
 每TaskManager都是一个JVM进程。
 ![](../picture/%E5%A4%A7%E6%95%B0%E6%8D%AE/flink/12-%E6%A6%82%E5%BF%B5.png)
 - Task Slot 是一个 TaskManager 中的**最小资源分配单位**（资源最小单元的抽象），从而表示TaskManager的并发能力，一般可以设置和TaskManager核数相同。
-- task是一种抽象，表示可以在单个线程中执行的Operator chain。类似于keyBy(导致shuffle)或pipeline 的 parallelism 的更改将打破chain 并迫使 Operator 进入单独的任务。在上面的图中，应用程序有三个任务。
+- task是一种抽象，表示可以在**单个线程中执行的Operator chain**。类似于keyBy(导致shuffle)或pipeline 的 parallelism 的更改将打破chain 并迫使 Operator 进入单独的任务。在上面的图中，应用程序有三个任务。
 - **subtask是task的一个并行切片**(slice)。也是任务的执行单元。在上面的图中，该应用程序有共5个subtask。2+2+1
 - 通过调整 TaskManager 中 task slot 的数量，用户可以定义 subtask 如何互相隔离
     - **每个 TaskManager 有一个 slot，这意味着每个 task group 都在单独的 JVM 中运行，小米采用这种方式**（例如，可以在单独的容器中启动）

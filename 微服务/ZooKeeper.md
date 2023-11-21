@@ -137,7 +137,7 @@ Paxos协议与分布式事务并不是同一层面的东西：
             - 承诺不再回复小于n的提案
             - 如果n大于它已经回复的所有prepare消息，则Acceptor将**已经accept过的最大编号的提案**回复给Proposer
     - Accept 阶段
-        - Proposer：在收到的超过一半Acceptors中取编号最大的Proposal的值，发出Accept请求。如果没有这样的值就任意选择
+        - Proposer：在收到的超过一半Acceptors（另一小半形不成决议）中取编号最大的Proposal的值，发出Accept请求。如果没有这样的值就任意选择
         - Acceptor：P1a：若未对编号大于n的Prepare请求做响应，则接受Proposal
 - 活锁  
 两个Proposer依次提出编号相互递增的提案
@@ -186,7 +186,7 @@ Paxos协议与分布式事务并不是同一层面的东西：
 - 客户端与服务器断开重连时会**发送本地保存的zxid**，服务端判断如果客户端lastZxid大于服务端zxid（说明服务端数据较老）则拒绝连接
 # 6 **ZAB(ZK Atomic Broadcast ZK原子消息广播协议)协议和Leader选举**
 ## 6.0 ZXID
-- 高 32 位是： epoch（纪元），代表着周期，每当选举产生一个新的 Leader 服务器时就会取出其本地日志中最大事务的 ZXID ，解析出 epoch（纪元）值操作加 1作为新的 epoch ，并将低 32 位置零。**可以防止旧Leader活过来后继续广播之前旧提议造成状态不一致问题**，只有当前Leader的提议才会被Follower处理。Leader没有进行选举期间，epoch是一致不会变化的。
+- 高 32 位是： epoch（纪元），代表着周期，每当选举产生一个新的 Leader 服务器时就会取出其本地日志中最大事务的 ZXID ，解析出 epoch（纪元）值操作加 1作为新的 epoch ，并将低 32 位置零。**可以防止旧Leader活过来后以为自己还是leader，继续广播之前旧提议造成状态不一致问题**，只有当前Leader的提议才会被Follower处理。Leader没有进行选举期间，epoch是一致不会变化的。
 - 低 32 位是： counter（计数器），它是一个简单的单调递增的计数器，针对客户端的每个事务请求都会进行加 1 操作。
 
 ## 6.1 Leader选举
@@ -215,7 +215,7 @@ Paxos协议与分布式事务并不是同一层面的东西：
         - 综上Leader选举算法需要选举出拥有最大ZXID的Leader——一定拥有所有已提交的提案
     - 同步过程
         - 将Follower上未提交的事务发送给Follower
-        - 对于Follower上应该丢弃的事务：采用ZXID(epoch,计数器)，当一个包含上个周期未提交事务的服务器启动时，其epoch不是最新，Leader会要求其回退
+        - 对于Follower上应该丢弃的事务：采用ZXID(epoch,计数器)，当一个包含上个周期未提交事务的服务器启动时（没有正在运行的，因为leader是最新zxid的），其epoch不是最新，Leader会要求其回退
 ## 6.4 理论算法（实际不是这么实现的）
 [Zookeeper学习之Zab一致性协议](https://www.cnblogs.com/jing99/p/12723817.html)
 
@@ -381,6 +381,7 @@ https://juejin.cn/post/6844904002962849799
 [Raft](https://zh.wikipedia.org/wiki/Raft)  
 [一文搞懂Raft算法](https://www.cnblogs.com/xybaby/p/10124083.html)  
 [Raft算法详解](https://zhuanlan.zhihu.com/p/32052223)
+[raft算法与paxos算法相比有什么优势，使用场景有什么差异？](https://www.zhihu.com/question/36648084)
 
 Raft是一种用于替代Paxos的共识算法。相比于Paxos，Raft的目标是提供更清晰的逻辑分工使得算法本身能被更好地理解，同时它安全性更高，并能提供一些额外的特性。Raft能为在计算机集**群之间部署有限状态机**提供一种通用方法，并确保集群内的任意节点在某种状态转换上保持一致。Raft这一名字来源于"Reliable, Replicated, Redundant, And Fault-Tolerant"（“可靠、可复制、可冗余、可容错”）的首字母缩写。
 - 角色
@@ -479,7 +480,7 @@ Raft是一种用于替代Paxos的共识算法。相比于Paxos，Raft的目标�
 
 假设leader发出了proposal并有一个follower接收到了这个proposal，但这时leader挂掉了，其他follower没有收到这个proposal（这个时候仍有一半以上机器正常工作），那么这个follower可以用这个proposal选举leader吗？
 - 场景1：仅Leader服务器挂了，则接受到Proposal的Follower服务器可以正常参选，且在其成为新Leader后，会将未完成的Proposal继续完成。
-- 场景2：Leader服务器和接受到的Follower都挂了。则该Proposal则会被抛弃。及时在其恢复后重新加了集群，仍然会被丢弃，因其ZXID小于当前新Leader发出的ZXID，在数据恢复阶段，已经被回退。
+- 场景2：Leader服务器和接受到的Follower都挂了。则该Proposal则会被抛弃。即使在其恢复后重新加了集群，仍然会被丢弃，因其ZXID小于当前新Leader发出的ZXID，在数据恢复阶段，已经被回退。
 
 # 20 如果没收到过半follower ack，会怎么样？
 [zookeeper 发出的proposal后没有接受到超过一半的ack会怎么样？](https://www.zhihu.com/question/376354635)

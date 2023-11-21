@@ -130,6 +130,7 @@ tomcat 以JNI形式调用http服务器的核心动态链接库来处理文件读
 ## 4.1 什么是Servlet?
 Servlet 是基于 Java 技术的 web 组件，容器托管的，用于**生成动态Web内容**。  
 客户端通过 Servlet 容器实现的请求/应答模型与 Servlet 交互。  
+在网络处理、http协议解析和业务逻辑之间做了一层胶水。
 - Servlet 接口是 Java Servlet API 的核心抽象。所有 Servlet 类必须直接或间接的实现该接口，或者更通常做法是通过继承一个实现了该接口的类从而复用许多共性功能。目前有 **GenericServlet 和HttpServlet** 这两个类实现了 Servlet 接口。大多数情况下，开发者只需要**继承 HttpServlet** 去实现自己的 Servlet 即可。
 - Servlet生命周期
 - Servlet 配置：Servlet 规范定义了如何配置 Servlet，包括使用 web.xml 文件或注解的方式来进行配置，如指定 Servlet 的 URL 映射、初始化参数等。

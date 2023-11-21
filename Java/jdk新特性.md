@@ -20,7 +20,7 @@
 [JDK 9-13都更新了什么](https://youngxhui.top/2019/11/jdk9-13%E9%83%BD%E6%9B%B4%E6%96%B0%E4%BA%86%E4%BB%80%E4%B9%88/)
 - var 类型推断
     - 声明的同时赋值
-    - 再 for 循环中
+    - 在 for 循环中
 - 为 G1 引入了多线程并行 Full GC
 - 集合copyOf
 # 4 JDK11

@@ -75,6 +75,7 @@
 ![](../picture/Java/JVM/%E5%86%85%E5%AD%98.jpeg)
 - -XMS、-Xmx
 ### 1.2.2 方法区（逻辑区域）：类信息、常量、静态变量、即时编译器编译后的代码
+见[常量池](#5-类文件结构)
 - 永久代：Full GC
     - jdk7
         - 符号引用(Symbols Reference)->native
@@ -154,12 +155,14 @@
     要求对象起始地址必须是 8 字节的整数倍，换句话说就是对象的大小必须是 8 字节的整数倍
 # 3.垃圾收集
 ## 3.1确定对象是否死亡
+>学术界一般观点，「引用计数」对程序执行性能的影响比「可达性分析」还要大。这主要是由于「引用计数」要求所有的指针赋值都要改变计数值，多线程的情况下这个操作还要加锁。而「可达性分析」只有在用完内存的情况下才需要做，相对指针赋值而言这个频率几乎可以忽略不计，其他时候对程序执行的性能没有影响。所以简单混用的话，相当于一边全盘吃了「引用计数」对性能影响的 debuff，另一边也还是不能避免 STW，并不划算。另一方面，基于「可达性分析」的 GC 现在也有很多手段避免长时间的 STW
 - 引用计数法  
-缺点：很难解决循环引用
+    - 缺点：很难解决循环引用（Python搭配标记清除一起用）
+    - 优点：回收及时
 - 可达性分析算法
     - GC roots  
       - Thread 活着的线程
-      - Stack Local 虚拟机栈应用的对象
+      - Stack Local 虚拟机栈引用的对象
       - JNI Local 本地方法栈引用的对象
       - Monitor Used - 用于同步的监控对象
       - Held by JVM - 用于JVM特殊目的由GC保留的对象，但实际上这个与JVM的实现是有关的。可能已知的一些类型是：**系统类加载器**、一些JVM知道的重要的**异常类**
@@ -234,12 +237,13 @@
 - ParNew
     - 多线程版本Serial收集器
     - 能与CMS配合
-- Parallel Scavenge
+- Parallel Scavenge：新生代复制，老年代标记整理（优势是可控制吞吐量）
     - -XX:MaxGCPauseMillis 控制最大垃圾收集停顿时间
-    - -XX:GCTimeRatio 垃圾收集时间占比
+    - -XX:GCTimeRatio 垃圾收集时间占比（吞吐量）
     - -XX:+UseAdaptiveSizePolicy 不需要配置一些参数和上述俩参数
     - 不能与CMS配合
 - CMS
+    - 以上都是GC线程并行，不与用户线程并行
 
     ![](../picture/Java/JVM/CMS-1.png)  
     ![](../picture/Java/JVM/CMS-2.png)  
@@ -252,6 +256,7 @@
             在进行FullGC时开启碎片整理
             - -XX:+CMSFullGCsBeforeCompaction  
             执行n次不压缩的Full GC后，执行一次压缩的
+- serial old、Parallel old是 full gc，只有cms是 old gc
 ## **3.5 G1**
 [Java Hotspot G1 GC的一些关键技术](https://tech.meituan.com/2016/09/23/g1.html)
 
@@ -308,7 +313,7 @@ G1是一种服务器端的垃圾收集器，应用在多处理器和大容量内
     - 每次Young GC结束的时候，当young gc结束，堆内存已经达到了 IHOP，开启global concurrent marking，**但不会立即开启，而是等待下次Young GC**
     - 在分配任何Humongous region（巨型区域）之前，会检查标记阈值，可能会启动一个并发周期
 
-    因为老年代空间中的使用内存发生变化只有一个情形：Young GC的时候。所以在这个时候判断是最合理的
+    因为老年代空间中的使用内存发生变化只有一个情形：Young GC或者大对象的时候。所以在这个时候判断是最合理的
 - Full GC：如对象空间分配或转移失败（evacuation failure）时，G1会首先尝试增加堆空间，如果扩容失败，则发起担保的Full GC，使用serial old GC 来收集整个GC heap
     - 从年轻代分区拷贝存活对象时，无法找到可用的空闲分区
     - 从老年代分区转移存活对象时，无法找到可用的空闲分区
@@ -393,7 +398,7 @@ HotSpot VM里其它非并发GC的触发条件复杂一些，不过大致的原�
 - jstack  
 线程快照
     - -l 锁的附加信息
-# 5类文件结构
+# 5 类文件结构
 两数据类型：无符号数、表
 ## 5.1 组成
 - 魔数
@@ -447,9 +452,9 @@ String s1 = new String("aaa");
     >StringTable在每个HotSpot VM的实例里只有一份，被所有的类共享。类的运行时常量池里的CONSTANT_String类型的常量，经过**解析（resolve）**之后，同样存的是字符串的引用；解析的过程会去查询StringTable，以保证**运行时常量池所引用的字符串与StringTable**所引用的是一致的
 - JDK6和JDK7
     ```JAVA
-    String s3 = new String("1") + new String("1");// 创建了一个堆上的对象
+    String s3 = new String("kuai") + new String("shou1");// 创建了一个堆上的对象
     s3.intern();// JDK6：复制到永久代，JDK7：不复制 共同点：保存引用到StringTable
-    String s4 = "11"; //从StringTable获取引用 
+    String s4 = "kuaishou1"; //从StringTable获取引用 
     System.out.println(s3 == s4);// JDK6：false，JDK7：true
     ```
     - JDK6：被StringTable引用的字符串实例存在永久代上
